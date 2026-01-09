@@ -17,6 +17,8 @@ export enum Difficulty {
   HARD = 'Těžká'
 }
 
+export type ControlScheme = 'BUTTONS' | 'SWIPE';
+
 export interface Tetromino {
   shape: number[][];
   color: string;
@@ -57,6 +59,7 @@ export interface ScoreEntry {
   mode?: GameMode; // Added mode support
   saved?: number;  // Track saved count in history
   killed?: number; // Track killed count in history
+  quests?: number; // Track completed quests
 }
 
 export interface KillerEntry {
