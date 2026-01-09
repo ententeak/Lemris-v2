@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, Difficulty, GridCell, Player, Lemming, BloodSplat, GameMode, Tetromino, Quest } from './types';
+import { GameState, Difficulty, GridCell, Player, Lemming, BloodSplat, GameMode, Tetromino, Quest, QuestObjective, QuestObjectiveType } from './types';
 import { COLS, ROWS, BLOCK_SIZE, RANDOM_TETROMINO, DIFFICULTY_SPEEDS, MAX_LEMMINGS, TETROMINOS } from './constants';
 import { getTopScores, getTopKillers, saveScore, saveKiller } from './services/storageService';
 
@@ -80,43 +80,120 @@ export default function App() {
   }, [gameMode]);
 
   const generateQuest = (level: number, mode: GameMode) => {
-      let type: any;
-      let target = 0;
-      let desc = '';
+      const objectives: QuestObjective[] = [];
+      const numObjectives = Math.min(3, 1 + Math.floor(level / 3)); // 1 to 3 objectives based on level
 
-      if (mode === GameMode.SAVE) {
-          type = Math.random() > 0.5 ? 'LINES' : 'LEMMINGS';
-          if (type === 'LINES') {
-              target = 2 + Math.floor(level * 1.5);
-              desc = `Smaž ${target} linek`;
-          } else {
-              target = 2 + Math.floor(level); 
-              if (target > MAX_LEMMINGS - 2) target = MAX_LEMMINGS - 2;
-              desc = `Měj ${target} Lemmingů`;
+      // Helper to check if type exists
+      const hasType = (t: QuestObjectiveType) => objectives.some(o => o.type === t);
+
+      for (let i = 0; i < numObjectives; i++) {
+          const r = Math.random();
+          let obj: QuestObjective | null = null;
+
+          // SAVE MODE QUESTS
+          if (mode === GameMode.SAVE) {
+              if (r < 0.4 && !hasType('CLEAR_LINES')) {
+                   const target = 2 + Math.floor(level * 1.5);
+                   obj = { type: 'CLEAR_LINES', target, current: 0, description: `Smaž ${target} linek`, isCompleted: false };
+              } else if (r < 0.7 && !hasType('HAVE_LEMMINGS')) {
+                   const target = Math.min(MAX_LEMMINGS - 2, 2 + Math.floor(level));
+                   obj = { type: 'HAVE_LEMMINGS', target, current: 0, description: `Měj ${target} Lemmingů`, isCompleted: false };
+              } else if (!hasType('CLEAR_DOUBLE') && level > 2) {
+                   const target = 1 + Math.floor(level / 5);
+                   obj = { type: 'CLEAR_DOUBLE', target, current: 0, description: `Smaž ${target}x 2-linku`, isCompleted: false };
+              } else if (!hasType('CLEAR_LINES')) {
+                   const target = 4 + level;
+                   obj = { type: 'CLEAR_LINES', target, current: 0, description: `Smaž ${target} linek`, isCompleted: false };
+              }
+          } 
+          // KILL MODE QUESTS
+          else if (mode === GameMode.KILL) {
+              if (r < 0.4 && !hasType('KILL_TOTAL')) {
+                   const target = 5 + (level * 2);
+                   obj = { type: 'KILL_TOTAL', target, current: 0, description: `Zabij ${target} Lemmingů`, isCompleted: false };
+              } else if (r < 0.7 && !hasType('CLEAR_LINES')) {
+                   const target = 2 + level;
+                   obj = { type: 'CLEAR_LINES', target, current: 0, description: `Smaž ${target} linek`, isCompleted: false };
+              } else if (!hasType('KILL_MULTI')) {
+                   const target = Math.min(5, 2 + Math.floor(level / 2));
+                   obj = { type: 'KILL_MULTI', target, current: 0, description: `Zabij ${target} jednou ranou`, isCompleted: false };
+              } else if (!hasType('CLEAR_TRIPLE') && level > 3) {
+                   obj = { type: 'CLEAR_TRIPLE', target: 1, current: 0, description: `Smaž 3-linku`, isCompleted: false };
+              }
           }
-      } else if (mode === GameMode.KILL) {
-          type = Math.random() > 0.5 ? 'KILL_TOTAL' : 'KILL_MULTI';
-          if (type === 'KILL_TOTAL') {
-              target = 5 + (level * 2);
-              desc = `Zabij ${target} Lemmingů`;
-          } else {
-              target = Math.min(2 + Math.floor(level / 2), 5); // Hard to get more than 4-5
-              desc = `Rozdrť ${target} jednou ranou`;
+          // CAGE MODE QUESTS
+          else if (mode === GameMode.CAGE) {
+               if (r < 0.4 && !hasType('SELL_TOTAL')) {
+                   const target = 5 + (level * 2);
+                   obj = { type: 'SELL_TOTAL', target, current: 0, description: `Prodej ${target} Lemmingů`, isCompleted: false };
+               } else if (r < 0.7 && !hasType('CLEAR_LINES')) {
+                   const target = 2 + level;
+                   obj = { type: 'CLEAR_LINES', target, current: 0, description: `Smaž ${target} linek`, isCompleted: false };
+               } else if (!hasType('SELL_BATCH')) {
+                   const target = Math.min(10, 2 + Math.floor(level / 2));
+                   obj = { type: 'SELL_BATCH', target, current: 0, description: `Prodej ${target} najednou`, isCompleted: false };
+               }
           }
-      } else if (mode === GameMode.CAGE) {
-          type = Math.random() > 0.5 ? 'SELL_TOTAL' : 'SELL_BATCH';
-          if (type === 'SELL_TOTAL') {
-              target = 5 + (level * 2);
-              desc = `Prodej ${target} Lemmingů`;
-          } else {
-              target = Math.min(2 + Math.floor(level / 2), 10);
-              desc = `Prodej ${target} najednou`;
-          }
+
+          if (obj) objectives.push(obj);
       }
 
-      const newQuest: Quest = { type, target, current: 0, description: desc, level };
+      // Fallback if empty (shouldn't happen but safety first)
+      if (objectives.length === 0) {
+          objectives.push({ type: 'CLEAR_LINES', target: 3, current: 0, description: 'Smaž 3 linky', isCompleted: false });
+      }
+
+      const newQuest: Quest = { objectives, level };
       setQuest(newQuest);
       questRef.current = newQuest;
+  };
+
+  const reportQuestProgress = (type: QuestObjectiveType, amount: number, isAbsolute: boolean = false) => {
+      if (!questRef.current) return;
+      
+      let changed = false;
+      let allCompleted = true;
+
+      const newObjectives = questRef.current.objectives.map(obj => {
+          if (obj.type === type) {
+              let newCurrent = obj.current;
+              
+              if (isAbsolute) {
+                  // For state-based quests (e.g., Have 5 Lemmings), the current value fluctuates
+                  newCurrent = amount; 
+              } else {
+                  // For cumulative quests (e.g., Kill 5), we just add
+                  // For High-Score events (e.g. Kill 5 at once), we check if new amount > current best
+                  if (type === 'KILL_MULTI' || type === 'SELL_BATCH') {
+                       if (amount > newCurrent) newCurrent = amount;
+                  } else {
+                       newCurrent += amount;
+                  }
+              }
+
+              // Cap at target for UI cleanliness (unless it's 'Have Lemmings' which can fluctuate)
+              const isNowCompleted = newCurrent >= obj.target;
+              
+              if (obj.current !== newCurrent || obj.isCompleted !== isNowCompleted) {
+                  changed = true;
+                  return { ...obj, current: newCurrent, isCompleted: isNowCompleted };
+              }
+          }
+          return obj;
+      });
+
+      // Check global completion
+      allCompleted = newObjectives.every(o => o.current >= o.target);
+
+      if (changed) {
+          const updatedQuest = { ...questRef.current, objectives: newObjectives };
+          questRef.current = updatedQuest;
+          setQuest(updatedQuest);
+      }
+
+      if (allCompleted) {
+          completeQuest();
+      }
   };
 
   const completeQuest = () => {
@@ -125,7 +202,6 @@ export default function App() {
       
       // Base reward
       let bonusPoints = 1000 * q.level;
-      let text = 'ÚKOL SPLNĚN!';
       let color = '#fbbf24';
 
       if (gameMode === GameMode.SAVE) {
@@ -150,8 +226,8 @@ export default function App() {
       } else {
           // Just Bonus Points for Kill/Cage
           bloodRef.current.push({
-              x: COLS / 2 - 2,
-              y: ROWS / 2 + 1,
+              x: COLS / 2 - 0.5,
+              y: ROWS / 2 + 2.5,
               alpha: 2,
               radius: 20,
               type: 'TEXT',
@@ -162,14 +238,24 @@ export default function App() {
       
       setScore(s => s + bonusPoints);
       
-      // Visual feedback central
+      // Visual feedback central - Split into two lines for better visibility
       bloodRef.current.push({
-          x: COLS / 2 - 2,
-          y: ROWS / 2,
+          x: COLS / 2 - 0.5,
+          y: ROWS / 2 - 1,
           alpha: 2,
-          radius: 30,
+          radius: 24,
           type: 'TEXT',
-          text: text,
+          text: 'ÚKOL',
+          color: color
+      });
+
+      bloodRef.current.push({
+          x: COLS / 2 - 0.5,
+          y: ROWS / 2 + 1,
+          alpha: 2,
+          radius: 24,
+          type: 'TEXT',
+          text: 'SPLNĚN!',
           color: color
       });
 
@@ -358,11 +444,7 @@ export default function App() {
         }
         
         // Update Quest: Total Kills
-        if (gameMode === GameMode.KILL && questRef.current?.type === 'KILL_TOTAL') {
-            questRef.current.current += killsInCurrentFrameRef.current;
-            setQuest({...questRef.current});
-            if (questRef.current.current >= questRef.current.target) completeQuest();
-        }
+        reportQuestProgress('KILL_TOTAL', killsInCurrentFrameRef.current);
     }
 
     lemmingsRef.current = survivingLemmings;
@@ -371,15 +453,8 @@ export default function App() {
     const trapped = countTrappedLemmings();
     setActiveLemmingsCount(survivingLemmings.length + trapped);
 
-    // Update Quest: Lemming Count (Save Mode)
-    if (gameMode === GameMode.SAVE && questRef.current?.type === 'LEMMINGS') {
-        const currentCount = survivingLemmings.length;
-        questRef.current.current = currentCount;
-        setQuest({...questRef.current}); // trigger re-render
-        if (currentCount >= questRef.current.target) {
-            completeQuest();
-        }
-    }
+    // Update Quest: Active Lemming Count
+    reportQuestProgress('HAVE_LEMMINGS', survivingLemmings.length, true);
 
     // Spawning Logic Handling
     if (isSpawningRef.current) {
@@ -585,21 +660,9 @@ export default function App() {
             applyKillScore(trappedKills);
         }
         
-        // Quest Check: Kill Mode
-        if (gameMode === GameMode.KILL && questRef.current) {
-            if (questRef.current.type === 'KILL_MULTI') {
-                 // Update max progress for batch
-                if (trappedKills > questRef.current.current) {
-                    questRef.current.current = trappedKills;
-                    setQuest({...questRef.current});
-                }
-                if (trappedKills >= questRef.current.target) completeQuest();
-            } else if (questRef.current.type === 'KILL_TOTAL') {
-                questRef.current.current += trappedKills;
-                setQuest({...questRef.current});
-                if (questRef.current.current >= questRef.current.target) completeQuest();
-            }
-        }
+        // Quest Progress: Kill Multi
+        reportQuestProgress('KILL_MULTI', trappedKills);
+        reportQuestProgress('KILL_TOTAL', trappedKills);
     }
 
 
@@ -631,30 +694,34 @@ export default function App() {
         linesCleared++;
         grid.splice(r, 1);
         grid.unshift(Array(COLS).fill({ value: 0, color: '' }));
+
+        // Adjust Lemmings positions: Move down lemmings that were above the cleared line
+        lemmingsRef.current.forEach(l => {
+            if (l.y < r) {
+                l.y += 1;
+            }
+        });
+        
+        // Adjust particles similarly
+        bloodRef.current.forEach(p => {
+             if (p.y < r) {
+                 p.y += 1;
+             }
+        });
       }
     }
 
     if (linesCleared > 0) {
-        // Quest Update: Lines (Save Mode)
-        if (gameMode === GameMode.SAVE && questRef.current?.type === 'LINES') {
-            questRef.current.current += linesCleared;
-            setQuest({...questRef.current});
-            if (questRef.current.current >= questRef.current.target) completeQuest();
-        }
+        // Quest Update: Lines
+        reportQuestProgress('CLEAR_LINES', linesCleared);
+        if (linesCleared === 2) reportQuestProgress('CLEAR_DOUBLE', 1);
+        if (linesCleared === 3) reportQuestProgress('CLEAR_TRIPLE', 1);
+        if (linesCleared >= 4) reportQuestProgress('CLEAR_TETRIS', 1);
+
         // Quest Update: Sell (Cage Mode)
-        if (gameMode === GameMode.CAGE && questRef.current) {
-             if (questRef.current.type === 'SELL_BATCH') {
-                 // Update max progress for batch so player sees they did something
-                 if (totalCashMoney > questRef.current.current) {
-                     questRef.current.current = totalCashMoney;
-                     setQuest({...questRef.current});
-                 }
-                 if (totalCashMoney >= questRef.current.target) completeQuest();
-             } else if (questRef.current.type === 'SELL_TOTAL') {
-                 questRef.current.current += totalCashMoney;
-                 setQuest({...questRef.current});
-                 if (questRef.current.current >= questRef.current.target) completeQuest();
-             }
+        if (gameMode === GameMode.CAGE) {
+             reportQuestProgress('SELL_BATCH', totalCashMoney);
+             reportQuestProgress('SELL_TOTAL', totalCashMoney);
         }
 
         // Scoring Logic based on Mode
@@ -955,14 +1022,24 @@ export default function App() {
 
             {/* Quest Display */}
              {quest && (
-                 <div className="bg-blue-900/80 p-2 rounded border border-blue-500 shadow-lg w-40 mb-1">
-                     <div className="text-[10px] text-blue-200 uppercase mb-1">Úkol (Lv.{quest.level})</div>
-                     <div className="text-xs font-retro text-white mb-1">{quest.description}</div>
-                     <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                         <div 
-                             className="h-full bg-blue-400 transition-all duration-300" 
-                             style={{ width: `${Math.min(100, (quest.current / quest.target) * 100)}%` }} 
-                         />
+                 <div className="bg-blue-900/90 p-2 rounded border border-blue-500 shadow-lg w-48 mb-1 pointer-events-auto">
+                     <div className="flex justify-between items-center mb-1">
+                        <div className="text-[10px] text-blue-200 uppercase">Úkol (Lv.{quest.level})</div>
+                     </div>
+                     <div className="flex flex-col gap-1.5">
+                        {quest.objectives.map((obj, i) => (
+                             <div key={i} className="flex flex-col">
+                                <div className={`text-[10px] font-retro ${obj.isCompleted ? 'text-green-400 line-through opacity-70' : 'text-white'}`}>
+                                    {obj.description}
+                                </div>
+                                <div className="w-full h-1 bg-gray-700 rounded-full overflow-hidden mt-0.5">
+                                    <div 
+                                        className={`h-full transition-all duration-300 ${obj.isCompleted ? 'bg-green-500' : 'bg-blue-400'}`}
+                                        style={{ width: `${Math.min(100, (obj.current / obj.target) * 100)}%` }} 
+                                    />
+                                </div>
+                             </div>
+                        ))}
                      </div>
                  </div>
              )}

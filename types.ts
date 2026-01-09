@@ -73,18 +73,26 @@ export type GridCell = {
   hasLemming?: boolean; // For CAGE mode
 };
 
-export type QuestType = 
-  | 'LINES' 
-  | 'LEMMINGS' 
-  | 'KILL_TOTAL' 
-  | 'KILL_MULTI' 
-  | 'SELL_TOTAL' 
-  | 'SELL_BATCH';
+export type QuestObjectiveType = 
+  | 'CLEAR_LINES'      // Total lines cleared
+  | 'CLEAR_DOUBLE'     // Clear 2 lines at once
+  | 'CLEAR_TRIPLE'     // Clear 3 lines at once
+  | 'CLEAR_TETRIS'     // Clear 4 lines at once
+  | 'HAVE_LEMMINGS'    // Maintain X active lemmings (State based)
+  | 'KILL_TOTAL'       // Kill X lemmings (Cumulative)
+  | 'KILL_MULTI'       // Kill X lemmings in one drop (Event based)
+  | 'SELL_TOTAL'       // Sell X lemmings (Cumulative)
+  | 'SELL_BATCH';      // Sell X lemmings in one line clear (Event based)
 
-export interface Quest {
-  type: QuestType;
+export interface QuestObjective {
+  type: QuestObjectiveType;
   target: number;
   current: number;
   description: string;
+  isCompleted: boolean;
+}
+
+export interface Quest {
+  objectives: QuestObjective[];
   level: number;
 }
