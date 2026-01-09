@@ -207,6 +207,33 @@ export default function App() {
     return matrix[0].map((val, index) => matrix.map(row => row[index]).reverse());
   };
 
+  const spawnPiece = () => {
+    const nextP = nextPieceRef.current;
+    
+    // Deep copy to prevent mutation of the template
+    const pShape = nextP.shape.map(row => [...row]);
+    const p: Player = {
+        x: Math.floor(COLS / 2) - 1,
+        y: 0,
+        tetromino: { ...nextP, shape: pShape },
+        rotation: 0,
+    };
+
+    playerRef.current = p;
+
+    // Generate new next piece
+    const nextTemplate = RANDOM_TETROMINO();
+    const nextShape = nextTemplate.shape.map(row => [...row]);
+    const nextPiece = { ...nextTemplate, shape: nextShape };
+    
+    nextPieceRef.current = nextPiece;
+    setNextPieceState(nextPiece);
+
+    if (!isValidMove(p, gridRef.current)) {
+        setGameState(GameState.GAME_OVER);
+    }
+  };
+
   // --- Game Loop Update ---
   const update = (time: number) => {
     if (gameState !== GameState.PLAYING) return;
@@ -283,9 +310,17 @@ export default function App() {
         const groundY = Math.floor(lemming.y + 1);
         const centerXInt = Math.floor(lemming.x + 0.5);
         
-        // FIX: Teleportation Glitch.
-        const isHoleBelow = groundY < ROWS && grid[groundY][centerXInt].value === 0;
-        const isPathToHoleClear = grid[Math.floor(lemming.y)][centerXInt].value === 0;
+        // FIX: Teleportation Glitch & Crash Prevention
+        const isHoleBelow = groundY < ROWS && 
+                            centerXInt >= 0 && centerXInt < COLS && 
+                            grid[groundY] && grid[groundY][centerXInt] && 
+                            grid[groundY][centerXInt].value === 0;
+
+        const currentY = Math.floor(lemming.y);
+        const isPathToHoleClear = currentY >= 0 && currentY < ROWS && 
+                                  centerXInt >= 0 && centerXInt < COLS &&
+                                  grid[currentY] && grid[currentY][centerXInt] &&
+                                  grid[currentY][centerXInt].value === 0;
 
         if (isHoleBelow && isPathToHoleClear) {
             lemming.state = 'FALLING';
@@ -523,6 +558,7 @@ export default function App() {
         if (isTrapped) {
             if (gameMode === GameMode.CAGE) {
                 // TRAP: Modify the grid cell to hold the lemming
+                // Ensure we are modifying the cell that now contains the block
                 if (grid[cy][cx].value !== 0) {
                     grid[cy][cx].hasLemming = true;
                 }
@@ -552,6 +588,11 @@ export default function App() {
         // Quest Check: Kill Mode
         if (gameMode === GameMode.KILL && questRef.current) {
             if (questRef.current.type === 'KILL_MULTI') {
+                 // Update max progress for batch
+                if (trappedKills > questRef.current.current) {
+                    questRef.current.current = trappedKills;
+                    setQuest({...questRef.current});
+                }
                 if (trappedKills >= questRef.current.target) completeQuest();
             } else if (questRef.current.type === 'KILL_TOTAL') {
                 questRef.current.current += trappedKills;
@@ -603,6 +644,11 @@ export default function App() {
         // Quest Update: Sell (Cage Mode)
         if (gameMode === GameMode.CAGE && questRef.current) {
              if (questRef.current.type === 'SELL_BATCH') {
+                 // Update max progress for batch so player sees they did something
+                 if (totalCashMoney > questRef.current.current) {
+                     questRef.current.current = totalCashMoney;
+                     setQuest({...questRef.current});
+                 }
                  if (totalCashMoney >= questRef.current.target) completeQuest();
              } else if (questRef.current.type === 'SELL_TOTAL') {
                  questRef.current.current += totalCashMoney;
@@ -634,25 +680,6 @@ export default function App() {
         playerRef.current = null;
     } else {
         spawnPiece();
-    }
-  };
-
-  const spawnPiece = () => {
-    const pieceToSpawn = nextPieceRef.current;
-    
-    playerRef.current = {
-      x: Math.floor(COLS / 2) - 1,
-      y: -1,
-      tetromino: pieceToSpawn,
-      rotation: 0
-    };
-    
-    const newNext = RANDOM_TETROMINO();
-    nextPieceRef.current = newNext;
-    setNextPieceState(newNext);
-    
-    if (!isValidMove(playerRef.current, gridRef.current)) {
-         setGameState(GameState.GAME_OVER);
     }
   };
 
@@ -859,7 +886,15 @@ export default function App() {
   // --- Render Helpers ---
   const saveHighScore = () => {
     if (!playerName.trim()) return;
-    saveScore({ name: playerName, score, date: new Date().toLocaleDateString(), difficulty, mode: gameMode });
+    saveScore({ 
+        name: playerName, 
+        score, 
+        date: new Date().toLocaleDateString(), 
+        difficulty, 
+        mode: gameMode,
+        saved: lemmingsSaved,
+        killed: lemmingsKilled
+    });
     if (lemmingsKilled > 0) {
         saveKiller({ name: playerName, kills: lemmingsKilled, date: new Date().toLocaleDateString(), difficulty, mode: gameMode });
     }
@@ -1047,7 +1082,14 @@ export default function App() {
                             {getTopScores(difficulty, gameMode).map((s, i) => (
                                 <tr key={i} className="border-b border-gray-700/50">
                                     <td className="py-1">{s.name}</td>
-                                    <td className="text-right text-yellow-200">{s.score}</td>
+                                    <td className="text-right text-yellow-200">
+                                        <div>{s.score}</div>
+                                        {s.mode === GameMode.SAVE && (
+                                            <div className="text-[10px] text-gray-400">
+                                                {s.saved || 0}❤️ / {s.killed || 0}💀
+                                            </div>
+                                        )}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -1100,16 +1142,30 @@ export default function App() {
                   <div className="mb-2 text-gray-300">Finální skóre</div>
                   <div className={`font-retro text-3xl mb-4 ${score < 0 ? 'text-red-400' : 'text-yellow-400'}`}>{score}</div>
                   
-                  <div className="mb-2 text-gray-300">
-                      {gameMode === GameMode.SAVE ? 'Zachráněno' : gameMode === GameMode.CAGE ? 'Prodáno' : 'Zabito'}
-                  </div>
-                  <div className={`font-retro text-2xl ${
-                      gameMode === GameMode.SAVE ? 'text-green-500' : 
-                      gameMode === GameMode.CAGE ? 'text-yellow-500' : 'text-red-500'
-                  }`}>
-                      {gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled} 
-                      {gameMode === GameMode.SAVE ? ' ❤️' : gameMode === GameMode.CAGE ? ' 💰' : ' 💀'}
-                  </div>
+                  {gameMode === GameMode.SAVE ? (
+                      <div className="flex gap-6 justify-center">
+                          <div className="text-center">
+                              <div className="text-xs text-gray-400 mb-1">Zachráněno</div>
+                              <div className="text-green-500 font-retro text-xl">{lemmingsSaved} ❤️</div>
+                          </div>
+                          <div className="text-center">
+                               <div className="text-xs text-gray-400 mb-1">Obětováno</div>
+                               <div className="text-red-500 font-retro text-xl">{lemmingsKilled} 💀</div>
+                          </div>
+                      </div>
+                  ) : (
+                      <>
+                        <div className="mb-2 text-gray-300">
+                            {gameMode === GameMode.CAGE ? 'Prodáno' : 'Zabito'}
+                        </div>
+                        <div className={`font-retro text-2xl ${
+                            gameMode === GameMode.CAGE ? 'text-yellow-500' : 'text-red-500'
+                        }`}>
+                            {lemmingsKilled} 
+                            {gameMode === GameMode.CAGE ? ' 💰' : ' 💀'}
+                        </div>
+                      </>
+                  )}
               </div>
 
               <div className="flex flex-col gap-2 w-full max-w-xs mb-6">

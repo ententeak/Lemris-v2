@@ -55,6 +55,8 @@ export interface ScoreEntry {
   date: string;
   difficulty: Difficulty;
   mode?: GameMode; // Added mode support
+  saved?: number;  // Track saved count in history
+  killed?: number; // Track killed count in history
 }
 
 export interface KillerEntry {
