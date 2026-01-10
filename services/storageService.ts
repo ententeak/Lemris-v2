@@ -1,14 +1,37 @@
-import { ScoreEntry, KillerEntry, Difficulty, GameMode } from '../types';
+
+import { ScoreEntry, KillerEntry, Difficulty, GameMode, ControlScheme } from '../types';
 
 const SCORES_KEY = 'lemris_scores_v1';
 const KILLERS_KEY = 'lemris_killers_v1';
+const SETTINGS_KEY = 'lemris_settings_v1';
+
+export interface GameSettings {
+  musicVol: number;
+  sfxVol: number;
+  controlScheme: ControlScheme;
+}
+
+export const getSettings = (): GameSettings => {
+  try {
+    const data = localStorage.getItem(SETTINGS_KEY);
+    return data ? JSON.parse(data) : { musicVol: 0.5, sfxVol: 0.5, controlScheme: 'SWIPE' };
+  } catch (e) {
+    return { musicVol: 0.5, sfxVol: 0.5, controlScheme: 'SWIPE' };
+  }
+};
+
+export const saveSettings = (settings: GameSettings) => {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {}
+};
 
 export const getTopScores = (difficulty: Difficulty, mode: GameMode): ScoreEntry[] => {
   try {
     const data = localStorage.getItem(SCORES_KEY);
     const allScores: ScoreEntry[] = data ? JSON.parse(data) : [];
     return allScores
-      .filter(s => s.difficulty === difficulty && (s.mode === mode || (!s.mode && mode === GameMode.SAVE))) // Backwards compatibility for SAVE
+      .filter(s => s.difficulty === difficulty && (s.mode === mode || (!s.mode && mode === GameMode.SAVE)))
       .sort((a, b) => b.score - a.score)
       .slice(0, 10);
   } catch (e) {
@@ -22,9 +45,7 @@ export const saveScore = (entry: ScoreEntry) => {
     const allScores: ScoreEntry[] = data ? JSON.parse(data) : [];
     allScores.push(entry);
     localStorage.setItem(SCORES_KEY, JSON.stringify(allScores));
-  } catch (e) {
-    console.error("Failed to save score", e);
-  }
+  } catch (e) {}
 };
 
 export const getTopKillers = (difficulty: Difficulty, mode: GameMode): KillerEntry[] => {
@@ -46,7 +67,5 @@ export const saveKiller = (entry: KillerEntry) => {
     const allKillers: KillerEntry[] = data ? JSON.parse(data) : [];
     allKillers.push(entry);
     localStorage.setItem(KILLERS_KEY, JSON.stringify(allKillers));
-  } catch (e) {
-    console.error("Failed to save killer", e);
-  }
+  } catch (e) {}
 };
