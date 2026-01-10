@@ -50,11 +50,14 @@ export interface Lemming {
 export interface BloodSplat {
   x: number;
   y: number;
+  vx?: number;
+  vy?: number;
   alpha: number;
   radius: number; 
   type: 'BLOOD' | 'MONEY' | 'TEXT';
   text?: string;
   color?: string;
+  isDrip?: boolean;
 }
 
 export interface ScoreEntry {
