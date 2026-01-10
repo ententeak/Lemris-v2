@@ -18,7 +18,6 @@ const GearIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height
 export default function App() {
   // --- Game State ---
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
-  // DEFAULT: Changed from SAVE to KILL
   const [gameMode, setGameMode] = useState<GameMode>(GameMode.KILL);
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.MEDIUM);
   const [score, setScore] = useState(0);
@@ -32,7 +31,6 @@ export default function App() {
   const [quest, setQuest] = useState<Quest | null>(null);
 
   // Settings State
-  // DEFAULT: Changed from BUTTONS to SWIPE
   const [controlScheme, setControlScheme] = useState<ControlScheme>('SWIPE');
   const [showSettings, setShowSettings] = useState(false);
   const [musicVol, setMusicVol] = useState(0.5);
@@ -177,17 +175,42 @@ export default function App() {
       questRef.current = newQuest;
   };
 
-  const reportQuestProgress = (type: QuestObjectiveType, amount: number, isAbsolute: boolean = false) => {
+  const reportQuestProgress = (type: string | QuestObjectiveType, amount: number, isAbsolute: boolean = false) => {
       if (!questRef.current) return;
+      
       let changed = false;
-      let allCompleted = true;
+      let targetType = type;
+
+      // --- Speciální hierarchická logika pro mazání linek ---
+      if (type === 'LINE_CLEAR_EVENT') {
+          const clearTypes: QuestObjectiveType[] = ['CLEAR_TETRIS', 'CLEAR_TRIPLE', 'CLEAR_DOUBLE'];
+          const typeToMinLines: Record<string, number> = { 'CLEAR_TETRIS': 4, 'CLEAR_TRIPLE': 3, 'CLEAR_DOUBLE': 2 };
+          
+          // Najdeme všechny dosud nesplněné úkoly pro linky, seřazené od nejtěžšího (Tetris)
+          const availableLineQuests = questRef.current.objectives
+              .filter(o => clearTypes.includes(o.type) && !o.isCompleted)
+              .sort((a, b) => typeToMinLines[b.type] - typeToMinLines[a.type]);
+          
+          // Najdeme první (nejvyšší) úkol, který tento počet linek (amount) dokáže uspokojit
+          const match = availableLineQuests.find(o => amount >= typeToMinLines[o.type]);
+          
+          if (match) {
+              targetType = match.type;
+              amount = 1; // Pro CLEAR_X úkoly přičítáme 1 instanci úspěchu
+          } else {
+              // Pokud žádný speciální úkol neodpovídá, zkontrolujeme aspoň obecné CLEAR_LINES
+              targetType = 'CLEAR_LINES';
+              // amount zůstává počet linek
+          }
+      }
+
       const newObjectives = questRef.current.objectives.map(obj => {
-          if (obj.type === type) {
+          if (obj.type === targetType) {
               let newCurrent = obj.current;
               if (isAbsolute) {
                   newCurrent = amount; 
               } else {
-                  if (type === 'KILL_MULTI' || type === 'SELL_BATCH') {
+                  if (obj.type === 'KILL_MULTI' || obj.type === 'SELL_BATCH') {
                        if (amount > newCurrent) newCurrent = amount;
                   } else {
                        newCurrent += amount;
@@ -201,7 +224,8 @@ export default function App() {
           }
           return obj;
       });
-      allCompleted = newObjectives.every(o => o.current >= o.target);
+
+      const allCompleted = newObjectives.every(o => o.isCompleted);
       if (changed) {
           const updatedQuest = { ...questRef.current, objectives: newObjectives };
           questRef.current = updatedQuest;
@@ -228,7 +252,7 @@ export default function App() {
           const lemmingCount = lemmingsRef.current.length;
           bonusPoints += lemmingCount * 500 * q.level;
           lemmingsRef.current.forEach(l => {
-             bloodRef.current.push({ x: l.x, y: l.y, alpha: 1.5, radius: 10, type: 'TEXT', text: `+${500 * q.level}`, color: '#4ade80' });
+             bloodRef.current.push({ x: l.x, y: Math.floor(l.y), alpha: 1.5, radius: 10, type: 'TEXT', text: `+${500 * q.level}`, color: '#4ade80' });
           });
           setLemmingsSaved(prev => prev + lemmingCount);
           lemmingsRef.current = [];
@@ -267,7 +291,6 @@ export default function App() {
     return true;
   };
 
-  // --- Ghost Logic Helper ---
   const getGhostY = (p: Player, grid: GridCell[][]) => {
     let ghostY = p.y;
     while (isValidMove({ ...p, y: ghostY + 1 }, grid)) {
@@ -403,7 +426,8 @@ export default function App() {
     audioController.playSquish();
     killsInCurrentFrameRef.current++;
     setLemmingsKilled(prev => prev + 1);
-    bloodRef.current.push({ x: lemming.x, y: lemming.y + 1, alpha: 1, radius: Math.random() * 10 + 10, type: 'BLOOD' });
+    // OPRAVA: Krev se nyní ukládá na přesný řádek (podlaha je počítána ve funkci draw)
+    bloodRef.current.push({ x: lemming.x, y: Math.floor(lemming.y), alpha: 1, radius: Math.random() * 10 + 10, type: 'BLOOD' });
   };
 
   const applyKillScore = (count: number) => {
@@ -518,12 +542,14 @@ export default function App() {
         const isTrapped = placedBlocks.some(b => b.x === cx && b.y === cy);
         if (isTrapped) {
             if (gameMode === GameMode.CAGE) {
+                // Zachycení do klece
                 if (grid[cy][cx].value !== 0) grid[cy][cx].hasLemming = true;
             } else {
                 trappedKills++;
                 setLemmingsKilled(prev => prev + 1);
                 audioController.playSquish();
-                bloodRef.current.push({ x: l.x, y: l.y + 1, alpha: 1, radius: Math.random() * 10 + 10, type: 'BLOOD' });
+                // OPRAVA: Krev na podlaze správného řádku
+                bloodRef.current.push({ x: l.x, y: Math.floor(l.y), alpha: 1, radius: Math.random() * 10 + 10, type: 'BLOOD' });
             }
         } else {
             survivingLemmings.push(l);
@@ -535,6 +561,7 @@ export default function App() {
         reportQuestProgress('KILL_MULTI', trappedKills);
         reportQuestProgress('KILL_TOTAL', trappedKills);
     }
+
     let linesCleared = 0;
     let totalCashMoney = 0;
     for (let r = 0; r < ROWS; r++) {
@@ -555,16 +582,19 @@ export default function App() {
         bloodRef.current.forEach(p => { if (p.y < r) p.y += 1; });
       }
     }
+
     if (linesCleared > 0) {
         audioController.playLineClear(linesCleared >= 4);
-        reportQuestProgress('CLEAR_LINES', linesCleared);
-        if (linesCleared === 2) reportQuestProgress('CLEAR_DOUBLE', 1);
-        if (linesCleared === 3) reportQuestProgress('CLEAR_TRIPLE', 1);
-        if (linesCleared >= 4) reportQuestProgress('CLEAR_TETRIS', 1);
+        
+        // --- HIERARCHICKÉ PLNĚNÍ ÚKOLŮ ---
+        reportQuestProgress('CLEAR_LINES', linesCleared); // Celkový počet linek
+        reportQuestProgress('LINE_CLEAR_EVENT', linesCleared); // Speciální (Tetris/Triple/Double)
+
         if (gameMode === GameMode.CAGE) {
              reportQuestProgress('SELL_BATCH', totalCashMoney);
              reportQuestProgress('SELL_TOTAL', totalCashMoney);
         }
+
         const activeLemmings = lemmingsRef.current.length;
         let points = 0;
         if (gameMode === GameMode.SAVE) {
@@ -610,7 +640,10 @@ export default function App() {
         const cy = p.y * BLOCK_SIZE + BLOCK_SIZE/2;
         if (p.type === 'BLOOD') {
             ctx.fillStyle = `rgba(180, 0, 0, ${p.alpha})`;
-            ctx.beginPath(); ctx.arc(cx, p.y * BLOCK_SIZE + BLOCK_SIZE, p.radius, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); 
+            // Kreslíme krev na SPODNÍ hranu řádku p.y
+            ctx.arc(cx, p.y * BLOCK_SIZE + BLOCK_SIZE, p.radius, 0, Math.PI*2); 
+            ctx.fill();
         } else if (p.type === 'MONEY') {
             ctx.fillStyle = `rgba(34, 197, 94, ${p.alpha})`; 
             ctx.font = `bold ${p.radius}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -624,7 +657,6 @@ export default function App() {
     });
     bloodRef.current = bloodRef.current.filter(b => b.alpha > 0);
     
-    // GHOST PIECE DRAWING
     if (playerRef.current && !isSpawningRef.current) {
         const ghostY = getGhostY(playerRef.current, gridRef.current);
         const { x, tetromino } = playerRef.current;
@@ -793,12 +825,12 @@ export default function App() {
         saved: lemmingsSaved, killed: lemmingsKilled, quests: questsCompletedRef.current 
     };
     saveScore(scoreData);
-    saveScoreRemote(scoreData); // REMOTE DB SAVE
+    saveScoreRemote(scoreData);
 
     if (lemmingsKilled > 0) {
         const killerData = { name: playerName, kills: lemmingsKilled, date: new Date().toLocaleDateString(), difficulty, mode: gameMode };
         saveKiller(killerData);
-        saveKillerRemote(killerData); // REMOTE DB KILLER SAVE
+        saveKillerRemote(killerData);
     }
     setGameState(GameState.MENU);
   };
