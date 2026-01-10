@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, Difficulty, GridCell, Player, Lemming, BloodSplat, GameMode, Tetromino, Quest, QuestObjective, QuestObjectiveType, ControlScheme } from './types';
+import { GameState, Difficulty, GridCell, Player, Lemming, BloodSplat, GameMode, Tetromino, Quest, QuestObjective, QuestObjectiveType, ControlScheme, ScoreEntry, KillerEntry } from './types';
 import { COLS, ROWS, BLOCK_SIZE, RANDOM_TETROMINO, DIFFICULTY_SPEEDS, MAX_LEMMINGS } from './constants';
 import { getTopScores, getTopKillers, saveScore, saveKiller } from './services/storageService';
-import { saveScoreRemote, saveKillerRemote } from './services/databaseService';
+import { saveScoreRemote, saveKillerRemote, fetchTopScoresRemote, fetchTopKillersRemote } from './services/databaseService';
 import { audioController } from './services/audioService';
 
 // --- Icons ---
@@ -29,20 +29,23 @@ export default function App() {
   const [nextPieceState, setNextPieceState] = useState(RANDOM_TETROMINO());
   const [quest, setQuest] = useState<Quest | null>(null);
 
+  // High Scores State (Combined Local + Remote)
+  const [topScores, setTopScores] = useState<ScoreEntry[]>([]);
+  const [topKillers, setTopKillers] = useState<KillerEntry[]>([]);
+
   // Settings State
   const [controlScheme, setControlScheme] = useState<ControlScheme>('SWIPE');
   const [showSettings, setShowSettings] = useState(false);
   const [musicVol, setMusicVol] = useState(0.5);
   const [sfxVol, setSfxVol] = useState(0.5);
 
-  // --- Refs for Game Loop & Canvas ---
+  // --- Refs ---
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const dropCounterRef = useRef<number>(0);
   const lemmingMoveCounterRef = useRef<number>(0);
   
-  // Game Logic Refs
   const gridRef = useRef<GridCell[][]>([]);
   const playerRef = useRef<Player | null>(null);
   const lemmingsRef = useRef<Lemming[]>([]);
@@ -54,11 +57,38 @@ export default function App() {
   const questRef = useRef<Quest | null>(null);
   const questsCompletedRef = useRef<number>(0); 
   
-  // Swipe Logic Refs
   const touchStartRef = useRef<{x: number, y: number, time: number} | null>(null);
   const touchLastPosRef = useRef<{x: number, y: number} | null>(null);
   const softDropIntervalRef = useRef<number | null>(null);
   const touchAxisRef = useRef<'none' | 'x' | 'y'>('none');
+
+  // --- Load Scores ---
+  const loadScores = useCallback(async () => {
+    // 1. Get local scores
+    const localScores = getTopScores(difficulty, gameMode);
+    const localKillers = getTopKillers(difficulty, gameMode);
+    
+    // 2. Try remote scores
+    const remoteScores = await fetchTopScoresRemote(difficulty, gameMode);
+    const remoteKillers = await fetchTopKillersRemote(difficulty, gameMode);
+
+    // 3. Merge and sort (unique by name+score or just trust remote if available)
+    const mergedScores = [...remoteScores, ...localScores]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+    const mergedKillers = [...remoteKillers, ...localKillers]
+        .sort((a, b) => b.kills - a.kills)
+        .slice(0, 10);
+
+    setTopScores(mergedScores);
+    setTopKillers(mergedKillers);
+  }, [difficulty, gameMode]);
+
+  useEffect(() => {
+    if (gameState === GameState.MENU) {
+        loadScores();
+    }
+  }, [gameState, loadScores]);
 
   // --- Initialization ---
   const initGame = useCallback(() => {
@@ -254,7 +284,7 @@ export default function App() {
       }
       setScore(s => s + bonusPoints);
       bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 - 1, alpha: 2, radius: 24, type: 'TEXT', text: 'ÚKOL', color: color });
-      bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 + 1, alpha: 2, radius: 24, type: 'TEXT', text: 'SPLNĚN!', color: color });
+      bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 + 1, alpha: 2, radius: 24, text: 'SPLNĚN!', color: color });
       generateQuest(q.level + 1, gameMode);
   };
 
@@ -296,6 +326,7 @@ export default function App() {
   };
 
   const spawnPiece = () => {
+    if (gameState === GameState.GAME_OVER) return;
     const nextP = nextPieceRef.current;
     const pShape = nextP.shape.map(row => [...row]);
     const p: Player = {
@@ -311,8 +342,16 @@ export default function App() {
     nextPieceRef.current = nextPiece;
     setNextPieceState(nextPiece);
     if (!isValidMove(p, gridRef.current)) {
-        setGameState(GameState.GAME_OVER);
+        triggerGameOver();
     }
+  };
+
+  const triggerGameOver = () => {
+    setGameState(GameState.GAME_OVER);
+    audioController.stopMusic();
+    audioController.playGameOver();
+    playerRef.current = null;
+    isSpawningRef.current = false;
   };
 
   const update = (time: number) => {
@@ -343,11 +382,21 @@ export default function App() {
     let anyLemmingFalling = false;
     killsInCurrentFrameRef.current = 0;
     const survivingLemmings: Lemming[] = [];
+    
     lemmings.forEach(lemming => {
+      // POJISTKA PROTI NESMRTELNOSTI: Pokud je Lemming uvnitř bloku v gridu, hned zemře
+      const gridX = Math.floor(lemming.x);
+      const gridY = Math.floor(lemming.y);
+      if (gridY >= 0 && gridY < ROWS && gridX >= 0 && gridX < COLS && grid[gridY][gridX].value !== 0) {
+          handleLemmingContact(lemming);
+          return;
+      }
+
       if (player && checkLemmingSquish(lemming, player)) {
         handleLemmingContact(lemming);
         return; 
       }
+      
       if (lemming.state === 'FALLING') {
         anyLemmingFalling = true;
         const fallSpeed = 0.8;
@@ -390,6 +439,7 @@ export default function App() {
       lemming.frame = (lemming.frame + 0.2) % 4;
       survivingLemmings.push(lemming);
     });
+
     if (killsInCurrentFrameRef.current > 0) {
         if (gameMode !== GameMode.CAGE) applyKillScore(killsInCurrentFrameRef.current);
         reportQuestProgress('KILL_TOTAL', killsInCurrentFrameRef.current);
@@ -398,7 +448,8 @@ export default function App() {
     const trapped = countTrappedLemmings();
     setActiveLemmingsCount(survivingLemmings.length + trapped);
     reportQuestProgress('HAVE_LEMMINGS', survivingLemmings.length, true);
-    if (isSpawningRef.current) {
+    
+    if (isSpawningRef.current && gameState === GameState.PLAYING) {
         if (!anyLemmingFalling) {
             if (linesToSpawnLemmingsRef.current > 0) {
                 const totalLemmings = lemmingsRef.current.length + (gameMode === GameMode.CAGE ? countTrappedLemmings() : 0);
@@ -496,40 +547,49 @@ export default function App() {
   };
 
   const lockPiece = () => {
-    if (!playerRef.current) return;
+    if (!playerRef.current || gameState !== GameState.PLAYING) return;
     audioController.playLand();
     const { x, y, tetromino } = playerRef.current;
     const grid = gridRef.current;
+
+    // Kontrola pro Game Over při pokusu o umístění v horní řadě
     if (y < 0) {
-        setGameState(GameState.GAME_OVER);
-        audioController.playGameOver();
-        audioController.stopMusic();
+        triggerGameOver();
         return;
     }
+
     const placedBlocks: {x: number, y: number}[] = [];
-    let gameOver = false;
+    let isGameOverDetected = false;
+
     tetromino.shape.forEach((row, dy) => {
       row.forEach((value, dx) => {
         if (value) {
             const gy = y + dy;
             const gx = x + dx;
-            if (gy >= 0 && gy < ROWS) placedBlocks.push({x: gx, y: gy});
-            else gameOver = true;
+            if (gy >= 0 && gy < ROWS) {
+                placedBlocks.push({x: gx, y: gy});
+            } else if (gy < 0) {
+                isGameOverDetected = true;
+            }
         }
       });
     });
-    if (gameOver) {
-        setGameState(GameState.GAME_OVER);
-        audioController.playGameOver();
-        audioController.stopMusic();
+
+    if (isGameOverDetected) {
+        triggerGameOver();
         return;
     }
-    placedBlocks.forEach(pos => { grid[pos.y][pos.x] = { value: 1, color: tetromino.color }; });
+
+    // Umístění bloků do mřížky
+    placedBlocks.forEach(pos => { 
+        grid[pos.y][pos.x] = { value: 1, color: tetromino.color }; 
+    });
+
     let trappedKills = 0;
     const survivingLemmings: Lemming[] = [];
     lemmingsRef.current.forEach(l => {
-        const cx = Math.floor(l.x + 0.5);
-        const cy = Math.floor(l.y + 0.5);
+        const cx = Math.floor(l.x); // Změna na floor pro přesnější grid collision
+        const cy = Math.floor(l.y);
         const isTrapped = placedBlocks.some(b => b.x === cx && b.y === cy);
         if (isTrapped) {
             if (gameMode === GameMode.CAGE) {
@@ -545,6 +605,7 @@ export default function App() {
         }
     });
     lemmingsRef.current = survivingLemmings;
+
     if (trappedKills > 0) {
         if (gameMode !== GameMode.CAGE) applyKillScore(trappedKills);
         reportQuestProgress('KILL_MULTI', trappedKills);
@@ -566,7 +627,7 @@ export default function App() {
         }
         linesCleared++;
         grid.splice(r, 1);
-        grid.unshift(Array(COLS).fill({ value: 0, color: '' }));
+        grid.unshift(Array.from({length: COLS}, () => ({ value: 0, color: '' })));
         lemmingsRef.current.forEach(l => { if (l.y < r) l.y += 1; });
         bloodRef.current.forEach(p => { if (p.y < r) p.y += 1; });
       }
@@ -816,18 +877,19 @@ export default function App() {
       touchAxisRef.current = 'none';
   };
 
-  const saveHighScore = () => {
+  const saveHighScore = async () => {
     if (!playerName.trim()) return;
     const scoreData = { 
         name: playerName, score, date: new Date().toLocaleDateString(), difficulty, mode: gameMode,
         saved: lemmingsSaved, killed: lemmingsKilled, quests: questsCompletedRef.current 
     };
     saveScore(scoreData);
-    saveScoreRemote(scoreData);
+    await saveScoreRemote(scoreData);
+    
     if (lemmingsKilled > 0) {
         const killerData = { name: playerName, kills: lemmingsKilled, date: new Date().toLocaleDateString(), difficulty, mode: gameMode };
         saveKiller(killerData);
-        saveKillerRemote(killerData);
+        await saveKillerRemote(killerData);
     }
     setGameState(GameState.MENU);
   };
@@ -892,7 +954,7 @@ export default function App() {
           </div>
       </div>
 
-      {/* Main Container - Canvas Wrapper */}
+      {/* Main Container */}
       <div className="flex-1 w-full flex flex-col md:flex-row items-center justify-center gap-2 overflow-hidden relative">
           
           {/* Desktop Left Quest Panel */}
@@ -914,7 +976,7 @@ export default function App() {
               )}
           </div>
 
-          {/* Canvas with fixed aspect ratio container */}
+          {/* Canvas Wrapper */}
           <div className="relative flex-1 max-h-full flex items-center justify-center overflow-hidden">
             <canvas 
                 ref={canvasRef} 
@@ -924,7 +986,7 @@ export default function App() {
             />
           </div>
 
-          {/* Mobile Quest HUD - More compact */}
+          {/* Mobile Quest HUD */}
           <div className="w-full lg:hidden flex flex-col items-center gap-1.5 pointer-events-none mb-1">
               {quest && (
                  <div className="w-full max-w-[280px] bg-blue-900/20 p-1.5 rounded border border-blue-500/20 pointer-events-auto backdrop-blur-sm">
@@ -940,16 +1002,10 @@ export default function App() {
                      </div>
                  </div>
               )}
-              <div className="flex items-center gap-3 pointer-events-auto">
-                 <div className="text-[8px] text-gray-500 uppercase tracking-widest">Populace: {activeLemmingsCount}/{MAX_LEMMINGS}</div>
-                 <div className="w-24 h-1 bg-gray-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-green-500" style={{ width: `${(activeLemmingsCount / MAX_LEMMINGS) * 100}%` }} />
-                 </div>
-              </div>
           </div>
       </div>
 
-      {/* Touch Controls (Buttons scheme) */}
+      {/* Controls Overlay */}
       {gameState === GameState.PLAYING && controlScheme === 'BUTTONS' && (
           <div className="w-full max-w-sm flex flex-col gap-2 pb-safe z-20 md:hidden pointer-events-auto mb-2">
               <div className="flex justify-between w-full px-4">
@@ -962,13 +1018,10 @@ export default function App() {
                         <button className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center backdrop-blur-md active:bg-red-500/30 border-2 border-red-500/30" onClick={() => playerRotate()}><RotateIcon /></button>
                    </div>
               </div>
-              <div className="flex justify-center">
-                   <button className="w-14 h-8 bg-yellow-500/10 rounded-full flex items-center justify-center backdrop-blur-md active:bg-yellow-500/30 border border-yellow-500/30" onClick={() => playerHardDrop()}><DropIcon /></button>
-              </div>
           </div>
       )}
 
-      {/* Overlays - Using dvh for full height */}
+      {/* MENU Overlay */}
       {gameState === GameState.MENU && !showSettings && (
         <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-start z-50 p-6 overflow-y-auto">
             <div className="pt-10 flex flex-col items-center w-full">
@@ -989,13 +1042,14 @@ export default function App() {
 
                 <button onClick={initGame} className={`px-10 py-5 text-white font-retro text-lg rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] active:translate-y-1 active:shadow-none transition-all mb-10 w-full max-w-xs ${ gameMode === GameMode.SAVE ? 'bg-green-600' : gameMode === GameMode.KILL ? 'bg-red-700' : 'bg-yellow-600' }`}>SPUSTIT HRU</button>
                 
+                {/* Scoreboards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl text-[9px] mb-10">
                     <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md">
-                        <h3 className="font-retro text-yellow-500 mb-4 text-center tracking-widest">TOP SKÓRE</h3>
+                        <h3 className="font-retro text-yellow-500 mb-4 text-center tracking-widest uppercase">Globální Skóre</h3>
                         <table className="w-full text-left">
                             <thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Úkoly</th><th className="text-right">Body</th></tr></thead>
                             <tbody>
-                                {getTopScores(difficulty, gameMode).map((s, i) => (
+                                {topScores.map((s, i) => (
                                     <tr key={i} className="border-b border-gray-800/30">
                                         <td className="py-2 max-w-[70px] truncate text-gray-300 font-bold">{s.name}</td><td className="text-right text-gray-500">{s.quests || 0}</td><td className="text-right text-yellow-400 font-retro text-[7px]">{s.score}</td>
                                     </tr>
@@ -1004,11 +1058,11 @@ export default function App() {
                         </table>
                     </div>
                     <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md">
-                        <h3 className="font-retro text-red-600 mb-4 text-center tracking-widest">TOP VRAZI</h3>
+                        <h3 className="font-retro text-red-600 mb-4 text-center tracking-widest uppercase">Největší Vrazi</h3>
                         <table className="w-full text-left">
                             <thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Mrtvol</th></tr></thead>
                             <tbody>
-                                {getTopKillers(difficulty, gameMode).map((k, i) => (
+                                {topKillers.map((k, i) => (
                                     <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[90px] truncate text-gray-300 font-bold">{k.name}</td><td className="text-right text-red-500 font-retro text-[7px]">{k.kills}</td></tr>
                                 ))}
                             </tbody>
@@ -1019,6 +1073,41 @@ export default function App() {
         </div>
       )}
 
+      {/* GAME OVER Overlay */}
+      {gameState === GameState.GAME_OVER && (
+          <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center z-50 p-6 overflow-y-auto">
+              <h2 className="font-retro text-4xl text-white mb-6 text-center drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">KONEC HRY</h2>
+              <div className="bg-black/60 p-6 rounded-3xl text-center mb-8 w-full max-w-sm border border-red-800/50 backdrop-blur-md">
+                  <div className="mb-2 text-gray-500 text-[9px] uppercase tracking-widest">Dosažené skóre</div>
+                  <div className={`font-retro text-3xl mb-6 ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div>
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                      <div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800">
+                          <div className="text-[7px] text-gray-600 mb-1 uppercase">ÚKOLY</div>
+                          <div className="font-retro text-base text-cyan-400">{questsCompleted}</div>
+                      </div>
+                      <div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800">
+                          <div className="text-[7px] text-gray-600 mb-1 uppercase">{gameMode === GameMode.SAVE ? 'SAVED' : 'KILLS'}</div>
+                          <div className={`font-retro text-base ${gameMode === GameMode.SAVE ? 'text-green-500' : 'text-red-500'}`}>{gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}</div>
+                      </div>
+                  </div>
+                  <div className="flex flex-col gap-2 text-left">
+                      <label className="text-[9px] uppercase text-gray-500 tracking-widest ml-1">Tvé jméno:</label>
+                      <input 
+                        type="text" 
+                        maxLength={12} 
+                        placeholder="Hráč" 
+                        className="bg-black border border-gray-800 text-white p-4 rounded-xl font-retro text-[10px] text-center focus:border-cyan-600 outline-none transition-all" 
+                        value={playerName} 
+                        onChange={(e) => setPlayerName(e.target.value)} 
+                        autoFocus
+                      />
+                  </div>
+              </div>
+              <button onClick={saveHighScore} className="px-10 py-5 bg-green-700 hover:bg-green-600 text-white font-retro rounded-2xl shadow-xl active:translate-y-1 transition-all w-full max-w-xs">ULOŽIT VÝSLEDEK</button>
+          </div>
+      )}
+
+      {/* Settings & Pause Overlays remain the same */}
       {showSettings && (
           <div className="absolute inset-0 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center z-50 p-6">
               <h2 className="font-retro text-2xl text-cyan-400 mb-8 tracking-[0.2em]">NASTAVENÍ</h2>
@@ -1050,31 +1139,6 @@ export default function App() {
               <h2 className="font-retro text-3xl text-white mb-10 tracking-[0.2em] animate-pulse">PAUZA</h2>
               <button onClick={() => { setGameState(GameState.PLAYING); audioController.startMusic(); }} className="px-10 py-4 bg-cyan-700 text-white font-retro rounded-xl mb-4 w-64 shadow-xl active:translate-y-1 transition-all">POKRAČOVAT</button>
               <button onClick={() => setGameState(GameState.MENU)} className="px-10 py-4 bg-red-800 text-white font-retro rounded-xl w-64 shadow-xl active:translate-y-1 transition-all">MENU</button>
-          </div>
-      )}
-
-      {gameState === GameState.GAME_OVER && (
-          <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center z-50 p-6 overflow-y-auto">
-              <h2 className="font-retro text-4xl text-white mb-6 text-center drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">KONEC HRY</h2>
-              <div className="bg-black/60 p-6 rounded-3xl text-center mb-8 w-full max-w-sm border border-red-800/50 backdrop-blur-md">
-                  <div className="mb-2 text-gray-500 text-[9px] uppercase tracking-widest">Dosažené skóre</div>
-                  <div className={`font-retro text-3xl mb-6 ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div>
-                  <div className="grid grid-cols-2 gap-3 mb-6">
-                      <div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800">
-                          <div className="text-[7px] text-gray-600 mb-1 uppercase">ÚKOLY</div>
-                          <div className="font-retro text-base text-cyan-400">{questsCompleted}</div>
-                      </div>
-                      <div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800">
-                          <div className="text-[7px] text-gray-600 mb-1 uppercase">{gameMode === GameMode.SAVE ? 'SAVED' : 'KILLS'}</div>
-                          <div className={`font-retro text-base ${gameMode === GameMode.SAVE ? 'text-green-500' : 'text-red-500'}`}>{gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}</div>
-                      </div>
-                  </div>
-                  <div className="flex flex-col gap-2 text-left">
-                      <label className="text-[9px] uppercase text-gray-500 tracking-widest ml-1">Tvé jméno:</label>
-                      <input type="text" maxLength={12} placeholder="Hráč" className="bg-black border border-gray-800 text-white p-4 rounded-xl font-retro text-[10px] text-center focus:border-cyan-600 outline-none transition-all" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
-                  </div>
-              </div>
-              <button onClick={saveHighScore} className="px-10 py-5 bg-green-700 hover:bg-green-600 text-white font-retro rounded-2xl shadow-xl active:translate-y-1 transition-all w-full max-w-xs">ULOŽIT DO TOP LISTU</button>
           </div>
       )}
     </div>
