@@ -2,10 +2,10 @@
 /**
  * DATABASE SERVICE (REMOTE)
  * 
- * Host: mysql.muj.cloud
- * DB: gemini_ententeak_cz
+ * Host: xxxxxx
+ * DB: xxxxx
  * User: gemini_5zNSQ
- * Pass: gQwbh4&6TX2AA7brNC
+ * Pass: xxxxx
  * Prefix: lemris_
  * 
  * POZNÁMKA: Prohlížeč nemůže přímo komunikovat s MySQL. 
