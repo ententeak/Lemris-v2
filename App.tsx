@@ -1,19 +1,18 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, Difficulty, GridCell, Player, Lemming, BloodSplat, GameMode, Tetromino, Quest, QuestObjective, QuestObjectiveType, ControlScheme } from './types';
-import { COLS, ROWS, BLOCK_SIZE, RANDOM_TETROMINO, DIFFICULTY_SPEEDS, MAX_LEMMINGS, TETROMINOS } from './constants';
+import { COLS, ROWS, BLOCK_SIZE, RANDOM_TETROMINO, DIFFICULTY_SPEEDS, MAX_LEMMINGS } from './constants';
 import { getTopScores, getTopKillers, saveScore, saveKiller } from './services/storageService';
 import { saveScoreRemote, saveKillerRemote } from './services/databaseService';
 import { audioController } from './services/audioService';
 
 // --- Icons ---
-const PauseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z"/></svg>;
-const RotateIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 5.5A10 10 0 1 0 22 17.8"/></svg>;
-const DownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>;
-const LeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>;
-const RightIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>;
-const DropIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>;
-const GearIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/></svg>;
+const PauseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z"/></svg>;
+const RotateIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 5.5A10 10 0 1 0 22 17.8"/></svg>;
+const DownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>;
+const LeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>;
+const RightIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>;
+const DropIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>;
+const GearIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/></svg>;
 
 export default function App() {
   // --- Game State ---
@@ -59,6 +58,7 @@ export default function App() {
   const touchStartRef = useRef<{x: number, y: number, time: number} | null>(null);
   const touchLastPosRef = useRef<{x: number, y: number} | null>(null);
   const softDropIntervalRef = useRef<number | null>(null);
+  const touchAxisRef = useRef<'none' | 'x' | 'y'>('none');
 
   // --- Initialization ---
   const initGame = useCallback(() => {
@@ -181,26 +181,18 @@ export default function App() {
       let changed = false;
       let targetType = type;
 
-      // --- Speciální hierarchická logika pro mazání linek ---
       if (type === 'LINE_CLEAR_EVENT') {
           const clearTypes: QuestObjectiveType[] = ['CLEAR_TETRIS', 'CLEAR_TRIPLE', 'CLEAR_DOUBLE'];
           const typeToMinLines: Record<string, number> = { 'CLEAR_TETRIS': 4, 'CLEAR_TRIPLE': 3, 'CLEAR_DOUBLE': 2 };
-          
-          // Najdeme všechny dosud nesplněné úkoly pro linky, seřazené od nejtěžšího (Tetris)
           const availableLineQuests = questRef.current.objectives
               .filter(o => clearTypes.includes(o.type) && !o.isCompleted)
               .sort((a, b) => typeToMinLines[b.type] - typeToMinLines[a.type]);
-          
-          // Najdeme první (nejvyšší) úkol, který tento počet linek (amount) dokáže uspokojit
           const match = availableLineQuests.find(o => amount >= typeToMinLines[o.type]);
-          
           if (match) {
               targetType = match.type;
-              amount = 1; // Pro CLEAR_X úkoly přičítáme 1 instanci úspěchu
+              amount = 1;
           } else {
-              // Pokud žádný speciální úkol neodpovídá, zkontrolujeme aspoň obecné CLEAR_LINES
               targetType = 'CLEAR_LINES';
-              // amount zůstává počet linek
           }
       }
 
@@ -426,7 +418,6 @@ export default function App() {
     audioController.playSquish();
     killsInCurrentFrameRef.current++;
     setLemmingsKilled(prev => prev + 1);
-    // OPRAVA: Krev se nyní ukládá na přesný řádek (podlaha je počítána ve funkci draw)
     bloodRef.current.push({ x: lemming.x, y: Math.floor(lemming.y), alpha: 1, radius: Math.random() * 10 + 10, type: 'BLOOD' });
   };
 
@@ -542,13 +533,11 @@ export default function App() {
         const isTrapped = placedBlocks.some(b => b.x === cx && b.y === cy);
         if (isTrapped) {
             if (gameMode === GameMode.CAGE) {
-                // Zachycení do klece
                 if (grid[cy][cx].value !== 0) grid[cy][cx].hasLemming = true;
             } else {
                 trappedKills++;
                 setLemmingsKilled(prev => prev + 1);
                 audioController.playSquish();
-                // OPRAVA: Krev na podlaze správného řádku
                 bloodRef.current.push({ x: l.x, y: Math.floor(l.y), alpha: 1, radius: Math.random() * 10 + 10, type: 'BLOOD' });
             }
         } else {
@@ -585,16 +574,12 @@ export default function App() {
 
     if (linesCleared > 0) {
         audioController.playLineClear(linesCleared >= 4);
-        
-        // --- HIERARCHICKÉ PLNĚNÍ ÚKOLŮ ---
-        reportQuestProgress('CLEAR_LINES', linesCleared); // Celkový počet linek
-        reportQuestProgress('LINE_CLEAR_EVENT', linesCleared); // Speciální (Tetris/Triple/Double)
-
+        reportQuestProgress('CLEAR_LINES', linesCleared);
+        reportQuestProgress('LINE_CLEAR_EVENT', linesCleared);
         if (gameMode === GameMode.CAGE) {
              reportQuestProgress('SELL_BATCH', totalCashMoney);
              reportQuestProgress('SELL_TOTAL', totalCashMoney);
         }
-
         const activeLemmings = lemmingsRef.current.length;
         let points = 0;
         if (gameMode === GameMode.SAVE) {
@@ -620,7 +605,7 @@ export default function App() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.fillStyle = '#111';
+    ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const scale = canvas.width / (COLS * BLOCK_SIZE);
     ctx.save();
@@ -629,8 +614,8 @@ export default function App() {
       row.forEach((cell, x) => {
         if (cell.value) drawBlock(ctx, x, y, cell.color, false, cell.hasLemming);
         else {
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 0.08; 
+            ctx.strokeStyle = '#1a1a1a';
+            ctx.lineWidth = 0.1; 
             ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
         }
       });
@@ -641,7 +626,6 @@ export default function App() {
         if (p.type === 'BLOOD') {
             ctx.fillStyle = `rgba(180, 0, 0, ${p.alpha})`;
             ctx.beginPath(); 
-            // Kreslíme krev na SPODNÍ hranu řádku p.y
             ctx.arc(cx, p.y * BLOCK_SIZE + BLOCK_SIZE, p.radius, 0, Math.PI*2); 
             ctx.fill();
         } else if (p.type === 'MONEY') {
@@ -776,6 +760,7 @@ export default function App() {
       const touch = e.touches[0];
       touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
       touchLastPosRef.current = { x: touch.clientX, y: touch.clientY };
+      touchAxisRef.current = 'none';
       if (softDropIntervalRef.current) clearInterval(softDropIntervalRef.current);
       softDropIntervalRef.current = window.setInterval(() => {
            if (touchStartRef.current && Date.now() - touchStartRef.current.time > 200) playerDrop();
@@ -783,15 +768,26 @@ export default function App() {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-      if (controlScheme !== 'SWIPE' || gameState !== GameState.PLAYING || !touchLastPosRef.current) return;
+      if (controlScheme !== 'SWIPE' || gameState !== GameState.PLAYING || !touchLastPosRef.current || !touchStartRef.current) return;
       const touch = e.touches[0];
       const deltaX = touch.clientX - touchLastPosRef.current.x;
-      const MOVE_THRESHOLD = 25; 
-      if (Math.abs(deltaX) > MOVE_THRESHOLD) {
-          if (softDropIntervalRef.current) { clearInterval(softDropIntervalRef.current); softDropIntervalRef.current = null; }
-          const steps = Math.floor(Math.abs(deltaX) / MOVE_THRESHOLD);
-          for(let i=0; i<steps; i++) playerMove(deltaX > 0 ? 1 : -1);
-          touchLastPosRef.current.x = touch.clientX; 
+      const deltaY = touch.clientY - touchLastPosRef.current.y;
+      const totalDeltaX = touch.clientX - touchStartRef.current.x;
+      const totalDeltaY = touch.clientY - touchStartRef.current.y;
+
+      if (touchAxisRef.current === 'none') {
+          if (Math.abs(totalDeltaX) > 15) touchAxisRef.current = 'x';
+          else if (Math.abs(totalDeltaY) > 15) touchAxisRef.current = 'y';
+      }
+
+      if (touchAxisRef.current === 'x') {
+          const MOVE_THRESHOLD = 30;
+          if (Math.abs(deltaX) > MOVE_THRESHOLD) {
+              if (softDropIntervalRef.current) { clearInterval(softDropIntervalRef.current); softDropIntervalRef.current = null; }
+              const steps = Math.floor(Math.abs(deltaX) / MOVE_THRESHOLD);
+              for(let i=0; i<steps; i++) playerMove(deltaX > 0 ? 1 : -1);
+              touchLastPosRef.current.x = touch.clientX; 
+          }
       }
       touchLastPosRef.current.y = touch.clientY;
   };
@@ -803,19 +799,21 @@ export default function App() {
       const deltaY = touch.clientY - touchStartRef.current.y;
       const deltaX = touch.clientX - touchStartRef.current.x;
       const timeDiff = Date.now() - touchStartRef.current.time;
-      const SWIPE_THRESHOLD = 50;
+      const SWIPE_THRESHOLD = 60;
+
       if (timeDiff < 300) { 
           if (Math.abs(deltaY) > Math.abs(deltaX)) {
               if (Math.abs(deltaY) > SWIPE_THRESHOLD) {
                   if (deltaY > 0) playerHardDrop();
                   else playerRotate(); 
               }
-          } else {
-             if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) playerRotate();
+          } else if (Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) {
+             playerRotate();
           }
       }
       touchStartRef.current = null;
       touchLastPosRef.current = null;
+      touchAxisRef.current = 'none';
   };
 
   const saveHighScore = () => {
@@ -826,7 +824,6 @@ export default function App() {
     };
     saveScore(scoreData);
     saveScoreRemote(scoreData);
-
     if (lemmingsKilled > 0) {
         const killerData = { name: playerName, kills: lemmingsKilled, date: new Date().toLocaleDateString(), difficulty, mode: gameMode };
         saveKiller(killerData);
@@ -835,12 +832,12 @@ export default function App() {
     setGameState(GameState.MENU);
   };
 
-  const renderNextPiece = () => {
+  const renderNextPiece = (size: number = 10) => {
       const p = nextPieceState.shape;
       return (
-          <div className="grid gap-px" style={{ gridTemplateColumns: `repeat(${p[0].length}, 10px)` }}>
+          <div className="grid gap-px" style={{ gridTemplateColumns: `repeat(${p[0].length}, ${size}px)` }}>
               {p.map((row, y) => row.map((val, x) => (
-                  <div key={`${x}-${y}`} className={`w-2.5 h-2.5 ${val ? '' : 'bg-transparent'}`} style={{ backgroundColor: val ? nextPieceState.color : 'transparent' }} />
+                  <div key={`${x}-${y}`} className={`w-${size/4} h-${size/4}`} style={{ width: size, height: size, backgroundColor: val ? nextPieceState.color : 'transparent' }} />
               )))}
           </div>
       );
@@ -848,192 +845,236 @@ export default function App() {
 
   return (
     <div 
-        className="relative w-full h-full bg-gray-900 text-white flex flex-col items-center justify-center overflow-hidden"
+        className="relative w-full h-[100dvh] bg-gray-950 text-white flex flex-col items-center justify-between overflow-hidden p-2 md:p-4"
         onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
     >
-      <div className="absolute top-0 left-0 w-full p-2 flex justify-between items-start z-10 pointer-events-none">
-          <div className="flex flex-col gap-2">
-            <div className="bg-gray-800 p-2 rounded border border-gray-600 shadow-lg">
-                <div className="text-xs text-gray-400 uppercase">Skóre</div>
-                <div className={`font-retro text-lg ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div>
-                <div className="mt-1 flex items-center gap-1 text-[10px] text-gray-400">
+      {/* Top HUD */}
+      <div className="w-full max-w-lg flex items-start justify-between z-10 gap-2 mb-1 pointer-events-none">
+          <div className="flex flex-col gap-1.5 pointer-events-auto">
+            <div className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl min-w-[90px] backdrop-blur-sm">
+                <div className="text-[8px] text-gray-400 uppercase">Skóre</div>
+                <div className={`font-retro text-xs md:text-base ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div>
+                <div className="mt-0.5 flex items-center gap-1 text-[7px] md:text-[9px] text-gray-500">
                     <span>SPD:</span>
                     <span className="text-cyan-400 font-retro">{Math.round((1000 - currentSpeed) / 5)}%</span>
                 </div>
             </div>
-            <div className="bg-gray-800 p-2 rounded border border-gray-600 shadow-lg">
-                <div className="text-xs text-gray-400 uppercase">
-                    {gameMode === GameMode.SAVE ? 'Zachráněno' : gameMode === GameMode.CAGE ? 'Prodáno' : 'Zabito'}
+            <div className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl min-w-[90px] backdrop-blur-sm">
+                <div className="text-[8px] text-gray-400 uppercase">
+                    {gameMode === GameMode.SAVE ? 'Saved' : gameMode === GameMode.CAGE ? 'Sold' : 'Kills'}
                 </div>
-                <div className={`font-retro text-sm ${gameMode === GameMode.SAVE ? 'text-green-400' : gameMode === GameMode.CAGE ? 'text-yellow-400' : 'text-red-400'}`}>
+                <div className={`font-retro text-xs ${gameMode === GameMode.SAVE ? 'text-green-400' : gameMode === GameMode.CAGE ? 'text-yellow-400' : 'text-red-400'}`}>
                     {gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}
                 </div>
             </div>
-            <div className="bg-gray-800 p-2 rounded border border-gray-600 shadow-lg">
-                 <div className="text-xs text-gray-400 uppercase">Další</div>
-                 <div className="mt-1 flex justify-center">{renderNextPiece()}</div>
+          </div>
+
+          <div className="flex-1 flex justify-center pointer-events-auto mt-1">
+            <div className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl text-center backdrop-blur-sm">
+                 <div className="text-[8px] text-gray-500 uppercase mb-0.5">Příště</div>
+                 <div className="flex justify-center scale-[0.6] md:scale-90 origin-top">{renderNextPiece(8)}</div>
             </div>
           </div>
-          <div className="flex flex-col gap-2 items-end">
-             <div className="flex gap-2 pointer-events-auto">
-                <button onClick={() => { setGameState(GameState.PAUSED); audioController.stopMusic(); setShowSettings(true); }} className="bg-gray-800 p-1 px-2 rounded border border-gray-600 shadow-lg hover:bg-gray-700"><GearIcon /></button>
-                <div className="bg-gray-800 p-1 px-2 rounded border border-gray-600 shadow-lg inline-block text-center">
-                    <div className={`text-xs font-bold ${gameMode === GameMode.KILL ? 'text-red-500' : gameMode === GameMode.CAGE ? 'text-yellow-400' : 'text-green-400'}`}>{gameMode}</div>
+
+          <div className="flex flex-col gap-1.5 items-end pointer-events-auto">
+             <div className="flex gap-1.5">
+                <button onClick={() => { setGameState(GameState.PAUSED); audioController.stopMusic(); setShowSettings(true); }} className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl hover:bg-gray-800 active:bg-gray-700"><GearIcon /></button>
+                <button className="bg-gray-800/80 p-1.5 rounded hover:bg-gray-700 active:bg-gray-600 border border-gray-600" onClick={() => { if (gameState === GameState.PLAYING) { setGameState(GameState.PAUSED); audioController.stopMusic(); } else { setGameState(GameState.PLAYING); audioController.startMusic(); } }}>
+                 <PauseIcon />
+                </button>
+             </div>
+             <div className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl text-center hidden md:block backdrop-blur-sm">
+                <div className="text-[8px] text-gray-500 uppercase mb-0.5">Pop: {activeLemmingsCount}</div>
+                <div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-green-500 transition-all duration-300" style={{ width: `${(activeLemmingsCount / MAX_LEMMINGS) * 100}%` }} />
                 </div>
              </div>
-             {quest && (
-                 <div className="bg-blue-900/90 p-2 rounded border border-blue-500 shadow-lg w-48 mb-1 pointer-events-auto">
-                     <div className="flex justify-between items-center mb-1">
-                        <div className="text-[10px] text-blue-200 uppercase">Úkol (Lv.{quest.level})</div>
-                     </div>
-                     <div className="flex flex-col gap-1.5">
+          </div>
+      </div>
+
+      {/* Main Container - Canvas Wrapper */}
+      <div className="flex-1 w-full flex flex-col md:flex-row items-center justify-center gap-2 overflow-hidden relative">
+          
+          {/* Desktop Left Quest Panel */}
+          <div className="hidden lg:flex flex-col gap-3 w-40">
+              {quest && (
+                 <div className="bg-blue-900/20 p-2.5 rounded border border-blue-500/30 backdrop-blur-md">
+                     <div className="text-[8px] text-blue-300 uppercase mb-2">Úkol Lv.{quest.level}</div>
+                     <div className="flex flex-col gap-2.5">
                         {quest.objectives.map((obj, i) => (
                              <div key={i} className="flex flex-col">
-                                <div className={`text-[10px] font-retro ${obj.isCompleted ? 'text-green-400 line-through opacity-70' : 'text-white'}`}>{obj.description}</div>
-                                <div className="w-full h-1 bg-gray-700 rounded-full overflow-hidden mt-0.5">
-                                    <div className={`h-full transition-all duration-300 ${obj.isCompleted ? 'bg-green-500' : 'bg-blue-400'}`} style={{ width: `${Math.min(100, (obj.current / obj.target) * 100)}%` }} />
+                                <div className={`text-[8px] font-retro leading-tight ${obj.isCompleted ? 'text-green-400 line-through opacity-50' : 'text-white'}`}>{obj.description}</div>
+                                <div className="w-full h-1 bg-gray-800 rounded-full overflow-hidden mt-1">
+                                    <div className={`h-full bg-blue-500`} style={{ width: `${Math.min(100, (obj.current / obj.target) * 100)}%` }} />
                                 </div>
                              </div>
                         ))}
                      </div>
                  </div>
-             )}
-             <div className="bg-gray-800 p-2 rounded border border-gray-600 shadow-lg w-32">
-                <div className="text-xs text-gray-400 uppercase mb-1">Lemmings ({activeLemmingsCount}/{MAX_LEMMINGS})</div>
-                <div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden">
-                    <div className="h-full bg-green-500 transition-all duration-300" style={{ width: `${(activeLemmingsCount / MAX_LEMMINGS) * 100}%` }} />
-                </div>
-             </div>
-             <button className="pointer-events-auto bg-gray-700 p-2 rounded hover:bg-gray-600 active:bg-gray-500" onClick={() => { if (gameState === GameState.PLAYING) { setGameState(GameState.PAUSED); audioController.stopMusic(); } else { setGameState(GameState.PLAYING); audioController.startMusic(); } }}>
-                 <PauseIcon />
-             </button>
+              )}
+          </div>
+
+          {/* Canvas with fixed aspect ratio container */}
+          <div className="relative flex-1 max-h-full flex items-center justify-center overflow-hidden">
+            <canvas 
+                ref={canvasRef} 
+                width={COLS * BLOCK_SIZE} 
+                height={ROWS * BLOCK_SIZE} 
+                className="border-2 border-gray-800 bg-black shadow-[0_0_50px_rgba(0,0,0,0.5)] h-full max-h-[calc(100dvh-180px)] md:max-h-[85vh] object-contain touch-none" 
+            />
+          </div>
+
+          {/* Mobile Quest HUD - More compact */}
+          <div className="w-full lg:hidden flex flex-col items-center gap-1.5 pointer-events-none mb-1">
+              {quest && (
+                 <div className="w-full max-w-[280px] bg-blue-900/20 p-1.5 rounded border border-blue-500/20 pointer-events-auto backdrop-blur-sm">
+                     <div className="flex flex-wrap justify-center gap-x-3 gap-y-0.5">
+                        {quest.objectives.map((obj, i) => (
+                             <div key={i} className="flex items-center gap-1.5">
+                                <div className={`text-[7px] font-retro ${obj.isCompleted ? 'text-green-400 line-through' : 'text-blue-200'}`}>{obj.description}</div>
+                                <div className="w-8 h-1 bg-gray-800 rounded-full overflow-hidden">
+                                    <div className={`h-full bg-blue-500`} style={{ width: `${Math.min(100, (obj.current / obj.target) * 100)}%` }} />
+                                </div>
+                             </div>
+                        ))}
+                     </div>
+                 </div>
+              )}
+              <div className="flex items-center gap-3 pointer-events-auto">
+                 <div className="text-[8px] text-gray-500 uppercase tracking-widest">Populace: {activeLemmingsCount}/{MAX_LEMMINGS}</div>
+                 <div className="w-24 h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-green-500" style={{ width: `${(activeLemmingsCount / MAX_LEMMINGS) * 100}%` }} />
+                 </div>
+              </div>
           </div>
       </div>
 
-      <canvas ref={canvasRef} width={COLS * BLOCK_SIZE} height={ROWS * BLOCK_SIZE} className="border-4 border-gray-700 bg-black shadow-2xl max-h-[85vh] object-contain" />
-
+      {/* Touch Controls (Buttons scheme) */}
       {gameState === GameState.PLAYING && controlScheme === 'BUTTONS' && (
-          <div className="absolute bottom-4 left-0 w-full flex flex-col gap-2 px-6 pb-2 z-20 md:hidden pointer-events-none">
-              <div className="flex justify-between w-full pointer-events-auto">
-                   <div className="flex gap-4">
-                        <button className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm active:bg-white/30" onClick={() => playerMove(-1)}><LeftIcon /></button>
-                        <button className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm active:bg-white/30" onClick={() => playerMove(1)}><RightIcon /></button>
+          <div className="w-full max-w-sm flex flex-col gap-2 pb-safe z-20 md:hidden pointer-events-auto mb-2">
+              <div className="flex justify-between w-full px-4">
+                   <div className="flex gap-3">
+                        <button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerMove(-1)}><LeftIcon /></button>
+                        <button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerMove(1)}><RightIcon /></button>
                    </div>
-                   <div className="flex gap-4">
-                        <button className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm active:bg-white/30" onClick={() => playerDrop()}><DownIcon /></button>
-                        <button className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center backdrop-blur-sm active:bg-red-500/40 border-2 border-red-500/50" onClick={() => playerRotate()}><RotateIcon /></button>
+                   <div className="flex gap-3">
+                        <button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerDrop()}><DownIcon /></button>
+                        <button className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center backdrop-blur-md active:bg-red-500/30 border-2 border-red-500/30" onClick={() => playerRotate()}><RotateIcon /></button>
                    </div>
               </div>
-              <div className="flex justify-center pointer-events-auto">
-                   <button className="w-20 h-12 bg-yellow-500/20 rounded-full flex items-center justify-center backdrop-blur-sm active:bg-yellow-500/40 border border-yellow-500/50" onClick={() => playerHardDrop()}><DropIcon /></button>
+              <div className="flex justify-center">
+                   <button className="w-14 h-8 bg-yellow-500/10 rounded-full flex items-center justify-center backdrop-blur-md active:bg-yellow-500/30 border border-yellow-500/30" onClick={() => playerHardDrop()}><DropIcon /></button>
               </div>
           </div>
       )}
 
+      {/* Overlays - Using dvh for full height */}
       {gameState === GameState.MENU && !showSettings && (
-        <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-50 p-4">
-            <div className="absolute top-4 right-4"><button onClick={() => setShowSettings(true)} className="p-2 bg-gray-800 rounded-full border border-gray-600 hover:bg-gray-700 text-gray-400"><GearIcon /></button></div>
-            <h1 className="font-retro text-4xl md:text-6xl text-cyan-400 mb-2 text-center">LEMRIS 2</h1>
-            <div className="flex gap-2 mb-6 bg-gray-800 p-1 rounded-lg">
-                <button onClick={() => setGameMode(GameMode.SAVE)} className={`px-4 py-2 rounded font-retro text-xs transition-colors ${gameMode === GameMode.SAVE ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}>ZACHRAŇ</button>
-                <button onClick={() => setGameMode(GameMode.KILL)} className={`px-4 py-2 rounded font-retro text-xs transition-colors ${gameMode === GameMode.KILL ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'}`}>ZABÍJEJ</button>
-                 <button onClick={() => setGameMode(GameMode.CAGE)} className={`px-4 py-2 rounded font-retro text-xs transition-colors ${gameMode === GameMode.CAGE ? 'bg-yellow-500 text-black' : 'text-gray-400 hover:text-white'}`}>LOV</button>
-            </div>
-            <p className="text-gray-400 mb-6 text-center max-w-md text-sm">
-                {gameMode === GameMode.SAVE && "Více lemmingů = Více bodů. Plň úkoly pro záchranu! (-1000 bodů za smrt)"}
-                {gameMode === GameMode.KILL && "Zabíjení lemmingů ti dává body! (+1000 bodů za smrt). Rozdrť je všechny!"}
-                {gameMode === GameMode.CAGE && "Chytej lemmingy do klecí! Po smazání řádku je prodáš za $$$."}
-            </p>
-            <div className="flex gap-4 mb-8">
-                {Object.values(Difficulty).map(d => (
-                    <button key={d} onClick={() => setDifficulty(d)} className={`px-4 py-2 rounded font-bold font-retro text-sm border-2 ${difficulty === d ? 'bg-cyan-600 border-cyan-400 text-white' : 'border-gray-600 text-gray-500'}`}>{d}</button>
-                ))}
-            </div>
-            <button onClick={initGame} className={`px-8 py-4 text-white font-retro text-xl rounded shadow-[0_4px_0_rgba(0,0,0,0.5)] active:shadow-none active:translate-y-1 transition-all mb-8 ${ gameMode === GameMode.SAVE ? 'bg-green-600 hover:bg-green-500' : gameMode === GameMode.KILL ? 'bg-red-700 hover:bg-red-600' : 'bg-yellow-600 hover:bg-yellow-500' }`}>START HRY</button>
-            <div className="flex flex-col md:flex-row gap-8 w-full max-w-4xl text-xs md:text-sm">
-                <div className="flex-1 bg-gray-800 p-4 rounded border border-gray-700">
-                    <h3 className="font-retro text-yellow-400 mb-4 text-center">TOP SKÓRE ({difficulty})</h3>
-                    <table className="w-full text-left">
-                        <thead><tr className="text-gray-500"><th>Jméno</th><th className="text-right">🏆</th><th className="text-right">Body</th></tr></thead>
-                        <tbody>
-                            {getTopScores(difficulty, gameMode).length === 0 && <tr><td colSpan={3} className="text-center py-2 text-gray-600">Zatím žádné záznamy</td></tr>}
-                            {getTopScores(difficulty, gameMode).map((s, i) => (
-                                <tr key={i} className="border-b border-gray-700/50">
-                                    <td className="py-1">{s.name}</td><td className="text-right text-gray-400">{s.quests || 0}</td><td className="text-right text-yellow-200"><div>{s.score}</div></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+        <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-start z-50 p-6 overflow-y-auto">
+            <div className="pt-10 flex flex-col items-center w-full">
+                <h1 className="font-retro text-4xl md:text-6xl text-cyan-500 mb-2 text-center drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">LEMRIS 2</h1>
+                <p className="text-[8px] text-gray-500 mb-6 tracking-[0.3em] uppercase">Save or Slaughter. You decide.</p>
+
+                <div className="flex flex-wrap justify-center gap-2 mb-6 bg-gray-900 p-1 rounded-xl border border-gray-800">
+                    <button onClick={() => setGameMode(GameMode.SAVE)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.SAVE ? 'bg-green-600 text-white shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'text-gray-500 hover:text-white'}`}>ZACHRAŇ</button>
+                    <button onClick={() => setGameMode(GameMode.KILL)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.KILL ? 'bg-red-600 text-white shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-gray-500 hover:text-white'}`}>ZABÍJEJ</button>
+                    <button onClick={() => setGameMode(GameMode.CAGE)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.CAGE ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.4)]' : 'text-gray-500 hover:text-white'}`}>LOV</button>
                 </div>
-                <div className="flex-1 bg-gray-800 p-4 rounded border border-gray-700">
-                    <h3 className="font-retro text-red-500 mb-4 text-center">NEJVĚTŠÍ VRAZI ({difficulty})</h3>
-                    <table className="w-full text-left">
-                        <thead><tr className="text-gray-500"><th>Jméno</th><th className="text-right">Mrtvol</th></tr></thead>
-                        <tbody>
-                            {getTopKillers(difficulty, gameMode).length === 0 && <tr><td colSpan={2} className="text-center py-2 text-gray-600">Mírumilovní hráči</td></tr>}
-                            {getTopKillers(difficulty, gameMode).map((k, i) => (
-                                <tr key={i} className="border-b border-gray-700/50"><td className="py-1">{k.name}</td><td className="text-right text-red-300">{k.kills}</td></tr>
-                            ))}
-                        </tbody>
-                    </table>
+
+                <div className="flex gap-4 mb-8">
+                    {Object.values(Difficulty).map(d => (
+                        <button key={d} onClick={() => setDifficulty(d)} className={`px-3 py-1.5 rounded-lg font-retro text-[8px] border-2 transition-all ${difficulty === d ? 'bg-cyan-700 border-cyan-400 text-white' : 'border-gray-800 text-gray-600'}`}>{d}</button>
+                    ))}
+                </div>
+
+                <button onClick={initGame} className={`px-10 py-5 text-white font-retro text-lg rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] active:translate-y-1 active:shadow-none transition-all mb-10 w-full max-w-xs ${ gameMode === GameMode.SAVE ? 'bg-green-600' : gameMode === GameMode.KILL ? 'bg-red-700' : 'bg-yellow-600' }`}>SPUSTIT HRU</button>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl text-[9px] mb-10">
+                    <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md">
+                        <h3 className="font-retro text-yellow-500 mb-4 text-center tracking-widest">TOP SKÓRE</h3>
+                        <table className="w-full text-left">
+                            <thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Úkoly</th><th className="text-right">Body</th></tr></thead>
+                            <tbody>
+                                {getTopScores(difficulty, gameMode).map((s, i) => (
+                                    <tr key={i} className="border-b border-gray-800/30">
+                                        <td className="py-2 max-w-[70px] truncate text-gray-300 font-bold">{s.name}</td><td className="text-right text-gray-500">{s.quests || 0}</td><td className="text-right text-yellow-400 font-retro text-[7px]">{s.score}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md">
+                        <h3 className="font-retro text-red-600 mb-4 text-center tracking-widest">TOP VRAZI</h3>
+                        <table className="w-full text-left">
+                            <thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Mrtvol</th></tr></thead>
+                            <tbody>
+                                {getTopKillers(difficulty, gameMode).map((k, i) => (
+                                    <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[90px] truncate text-gray-300 font-bold">{k.name}</td><td className="text-right text-red-500 font-retro text-[7px]">{k.kills}</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
       )}
 
       {showSettings && (
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center z-50 p-6 pointer-events-auto">
-              <h2 className="font-retro text-2xl text-cyan-400 mb-6">NASTAVENÍ</h2>
-              <div className="w-full max-sm bg-gray-800 p-6 rounded border border-gray-600 mb-6">
-                  <div className="mb-6">
-                      <label className="block text-gray-400 text-xs uppercase mb-2">Typ ovládání</label>
-                      <div className="flex bg-gray-900 rounded p-1">
-                          <button className={`flex-1 py-2 text-xs font-bold rounded ${controlScheme === 'BUTTONS' ? 'bg-cyan-600 text-white' : 'text-gray-500'}`} onClick={() => setControlScheme('BUTTONS')}>TLAČÍTKA</button>
-                          <button className={`flex-1 py-2 text-xs font-bold rounded ${controlScheme === 'SWIPE' ? 'bg-cyan-600 text-white' : 'text-gray-500'}`} onClick={() => setControlScheme('SWIPE')}>GESTY (SWIPE)</button>
+          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center z-50 p-6">
+              <h2 className="font-retro text-2xl text-cyan-400 mb-8 tracking-[0.2em]">NASTAVENÍ</h2>
+              <div className="w-full max-w-sm bg-gray-900 p-6 rounded-3xl border border-gray-800 shadow-2xl">
+                  <div className="mb-8">
+                      <label className="block text-gray-500 text-[9px] uppercase mb-4 tracking-widest">Metoda ovládání</label>
+                      <div className="flex bg-black rounded-xl p-1 gap-1 border border-gray-800">
+                          <button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'BUTTONS' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('BUTTONS')}>TLAČÍTKA</button>
+                          <button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'SWIPE' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('SWIPE')}>SWIPE</button>
                       </div>
                   </div>
-                  <div className="mb-4">
-                      <div className="flex justify-between mb-1"><label className="text-gray-400 text-xs uppercase">Hudba</label><span className="text-xs text-gray-300">{Math.round(musicVol * 100)}%</span></div>
-                      <input type="range" min="0" max="1" step="0.1" value={musicVol} onChange={handleMusicVolChange} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
-                  </div>
-                  <div className="mb-2">
-                      <div className="flex justify-between mb-1"><label className="text-gray-400 text-xs uppercase">Efekty</label><span className="text-xs text-gray-300">{Math.round(sfxVol * 100)}%</span></div>
-                      <input type="range" min="0" max="1" step="0.1" value={sfxVol} onChange={handleSfxVolChange} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" />
+                  <div className="space-y-6">
+                      <div>
+                          <div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Hudba</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(musicVol * 100)}%</span></div>
+                          <input type="range" min="0" max="1" step="0.1" value={musicVol} onChange={handleMusicVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                      </div>
+                      <div>
+                          <div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Zvuky</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(sfxVol * 100)}%</span></div>
+                          <input type="range" min="0" max="1" step="0.1" value={sfxVol} onChange={handleSfxVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
+                      </div>
                   </div>
               </div>
-              <button onClick={() => setShowSettings(false)} className="px-6 py-3 bg-green-600 text-white font-retro rounded shadow-lg">HOTOVO</button>
+              <button onClick={() => setShowSettings(false)} className="mt-10 px-12 py-4 bg-green-600 text-white font-retro rounded-xl shadow-lg active:scale-95 transition-all">ZAVŘÍT</button>
           </div>
       )}
 
       {gameState === GameState.PAUSED && !showSettings && (
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center z-50">
-              <h2 className="font-retro text-4xl text-white mb-8">PAUZA</h2>
-              <button onClick={() => { setGameState(GameState.PLAYING); audioController.startMusic(); }} className="px-6 py-3 bg-cyan-600 text-white font-retro rounded mb-4">POKRAČOVAT</button>
-              <button onClick={() => setGameState(GameState.MENU)} className="px-6 py-3 bg-red-600 text-white font-retro rounded">UKONČIT</button>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center z-50">
+              <h2 className="font-retro text-3xl text-white mb-10 tracking-[0.2em] animate-pulse">PAUZA</h2>
+              <button onClick={() => { setGameState(GameState.PLAYING); audioController.startMusic(); }} className="px-10 py-4 bg-cyan-700 text-white font-retro rounded-xl mb-4 w-64 shadow-xl active:translate-y-1 transition-all">POKRAČOVAT</button>
+              <button onClick={() => setGameState(GameState.MENU)} className="px-10 py-4 bg-red-800 text-white font-retro rounded-xl w-64 shadow-xl active:translate-y-1 transition-all">MENU</button>
           </div>
       )}
 
       {gameState === GameState.GAME_OVER && (
-          <div className="absolute inset-0 bg-red-900/90 flex flex-col items-center justify-center z-50 p-4">
-              <h2 className="font-retro text-5xl text-white mb-4 drop-shadow-[4px_4px_0_#000]">GAME OVER</h2>
-              <div className="bg-black/50 p-6 rounded-lg text-center mb-6 w-full max-w-md">
-                  <div className="mb-2 text-gray-300">Finální skóre</div>
-                  <div className={`font-retro text-3xl mb-4 ${score < 0 ? 'text-red-400' : 'text-yellow-400'}`}>{score}</div>
-                  <div className="mb-4 flex justify-center items-center gap-2 text-yellow-200"><span>Splněné úkoly:</span><span className="font-retro text-xl">{questsCompleted} 🏆</span></div>
-                  {gameMode === GameMode.SAVE ? (
-                      <div className="flex gap-6 justify-center">
-                          <div className="text-center"><div className="text-xs text-gray-400 mb-1">Zachráněno</div><div className="text-green-500 font-retro text-xl">{lemmingsSaved} ❤️</div></div>
-                          <div className="text-center"><div className="text-xs text-gray-400 mb-1">Obětováno</div><div className="text-red-500 font-retro text-xl">{lemmingsKilled} 💀</div></div>
+          <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center z-50 p-6 overflow-y-auto">
+              <h2 className="font-retro text-4xl text-white mb-6 text-center drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">KONEC HRY</h2>
+              <div className="bg-black/60 p-6 rounded-3xl text-center mb-8 w-full max-w-sm border border-red-800/50 backdrop-blur-md">
+                  <div className="mb-2 text-gray-500 text-[9px] uppercase tracking-widest">Dosažené skóre</div>
+                  <div className={`font-retro text-3xl mb-6 ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div>
+                  <div className="grid grid-cols-2 gap-3 mb-6">
+                      <div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800">
+                          <div className="text-[7px] text-gray-600 mb-1 uppercase">ÚKOLY</div>
+                          <div className="font-retro text-base text-cyan-400">{questsCompleted}</div>
                       </div>
-                  ) : (
-                      <><div className="mb-2 text-gray-300">{gameMode === GameMode.CAGE ? 'Prodáno' : 'Zabito'}</div><div className={`font-retro text-2xl ${ gameMode === GameMode.CAGE ? 'text-yellow-500' : 'text-red-500' }`}>{lemmingsKilled} {gameMode === GameMode.CAGE ? ' 💰' : ' 💀'}</div></>
-                  )}
+                      <div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800">
+                          <div className="text-[7px] text-gray-600 mb-1 uppercase">{gameMode === GameMode.SAVE ? 'SAVED' : 'KILLS'}</div>
+                          <div className={`font-retro text-base ${gameMode === GameMode.SAVE ? 'text-green-500' : 'text-red-500'}`}>{gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}</div>
+                      </div>
+                  </div>
+                  <div className="flex flex-col gap-2 text-left">
+                      <label className="text-[9px] uppercase text-gray-500 tracking-widest ml-1">Tvé jméno:</label>
+                      <input type="text" maxLength={12} placeholder="Hráč" className="bg-black border border-gray-800 text-white p-4 rounded-xl font-retro text-[10px] text-center focus:border-cyan-600 outline-none transition-all" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
+                  </div>
               </div>
-              <div className="flex flex-col gap-2 w-full max-w-xs mb-6">
-                  <label className="text-xs uppercase text-gray-300">Zadej své jméno:</label>
-                  <input type="text" maxLength={12} placeholder="Bezejmenný hrdina" className="bg-gray-800 border border-gray-600 text-white p-3 rounded font-retro text-center focus:border-cyan-500 outline-none" value={playerName} onChange={(e) => setPlayerName(e.target.value)} />
-              </div>
-              <div className="flex gap-4"><button onClick={saveHighScore} className="px-6 py-3 bg-green-600 hover:bg-green-500 text-white font-retro rounded shadow-[0_4px_0_rgb(20,83,45)] active:translate-y-1 active:shadow-none">ULOŽIT A MENU</button></div>
+              <button onClick={saveHighScore} className="px-10 py-5 bg-green-700 hover:bg-green-600 text-white font-retro rounded-2xl shadow-xl active:translate-y-1 transition-all w-full max-w-xs">ULOŽIT DO TOP LISTU</button>
           </div>
       )}
     </div>

@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
     <title>Lemris 2</title>
     
     <!-- Tailwind CSS -->
@@ -14,19 +14,38 @@
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     
     <style>
+      :root {
+        --app-height: 100dvh;
+      }
       body {
         font-family: 'Roboto', sans-serif;
         overscroll-behavior: none;
         touch-action: none;
-        background-color: #1a1a1a;
+        background-color: #0a0a0a;
         margin: 0;
         overflow: hidden;
+        height: var(--app-height);
+        width: 100vw;
+        position: fixed;
+      }
+      #root {
+        height: var(--app-height);
+        width: 100%;
       }
       .font-retro {
         font-family: 'Press Start 2P', cursive;
       }
-      /* Prevent mobile pull-to-refresh */
-      body, html { position: fixed; width: 100%; height: 100%; }
+      /* Custom scrollbar for menu lists if needed */
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #1a1a1a;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #333;
+        border-radius: 10px;
+      }
     </style>
 <script type="importmap">
 {
