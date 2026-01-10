@@ -1,21 +1,27 @@
-export enum GameState {
-  MENU,
-  PLAYING,
-  PAUSED,
-  GAME_OVER
-}
+export const GameState = {
+  MENU: 0,
+  PLAYING: 1,
+  PAUSED: 2,
+  GAME_OVER: 3
+} as const;
 
-export enum GameMode {
-  SAVE = 'Zachraň',
-  KILL = 'Zabíjej',
-  CAGE = 'Lov'
-}
+export type GameState = typeof GameState[keyof typeof GameState];
 
-export enum Difficulty {
-  EASY = 'Lehká',
-  MEDIUM = 'Střední',
-  HARD = 'Těžká'
-}
+export const GameMode = {
+  SAVE: 'Zachraň',
+  KILL: 'Zabíjej',
+  CAGE: 'Lov'
+} as const;
+
+export type GameMode = typeof GameMode[keyof typeof GameMode];
+
+export const Difficulty = {
+  EASY: 'Lehká',
+  MEDIUM: 'Střední',
+  HARD: 'Těžká'
+} as const;
+
+export type Difficulty = typeof Difficulty[keyof typeof Difficulty];
 
 export type ControlScheme = 'BUTTONS' | 'SWIPE';
 
@@ -33,9 +39,9 @@ export interface Player {
 
 export interface Lemming {
   id: number;
-  x: number; // Grid coordinates (float for smooth movement)
+  x: number; 
   y: number;
-  dx: number; // Direction: -1 or 1
+  dx: number; 
   dy: number;
   state: 'WALKING' | 'FALLING' | 'DYING';
   frame: number;
@@ -45,7 +51,7 @@ export interface BloodSplat {
   x: number;
   y: number;
   alpha: number;
-  radius: number; // Used as font size for text particles
+  radius: number; 
   type: 'BLOOD' | 'MONEY' | 'TEXT';
   text?: string;
   color?: string;
@@ -56,10 +62,10 @@ export interface ScoreEntry {
   score: number;
   date: string;
   difficulty: Difficulty;
-  mode?: GameMode; // Added mode support
-  saved?: number;  // Track saved count in history
-  killed?: number; // Track killed count in history
-  quests?: number; // Track completed quests
+  mode?: GameMode;
+  saved?: number;
+  killed?: number;
+  quests?: number;
 }
 
 export interface KillerEntry {
@@ -67,25 +73,25 @@ export interface KillerEntry {
   kills: number;
   date: string;
   difficulty: Difficulty;
-  mode?: GameMode; // Added mode support
+  mode?: GameMode;
 }
 
 export type GridCell = {
-  value: number; // 0 = empty, 1 = occupied
+  value: number; 
   color: string;
-  hasLemming?: boolean; // For CAGE mode
+  hasLemming?: boolean;
 };
 
 export type QuestObjectiveType = 
-  | 'CLEAR_LINES'      // Total lines cleared
-  | 'CLEAR_DOUBLE'     // Clear 2 lines at once
-  | 'CLEAR_TRIPLE'     // Clear 3 lines at once
-  | 'CLEAR_TETRIS'     // Clear 4 lines at once
-  | 'HAVE_LEMMINGS'    // Maintain X active lemmings (State based)
-  | 'KILL_TOTAL'       // Kill X lemmings (Cumulative)
-  | 'KILL_MULTI'       // Kill X lemmings in one drop (Event based)
-  | 'SELL_TOTAL'       // Sell X lemmings (Cumulative)
-  | 'SELL_BATCH';      // Sell X lemmings in one line clear (Event based)
+  | 'CLEAR_LINES'
+  | 'CLEAR_DOUBLE'
+  | 'CLEAR_TRIPLE'
+  | 'CLEAR_TETRIS'
+  | 'HAVE_LEMMINGS'
+  | 'KILL_TOTAL'
+  | 'KILL_MULTI'
+  | 'SELL_TOTAL'
+  | 'SELL_BATCH';
 
 export interface QuestObjective {
   type: QuestObjectiveType;
