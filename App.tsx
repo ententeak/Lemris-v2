@@ -284,7 +284,7 @@ export default function App() {
       }
       setScore(s => s + bonusPoints);
       bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 - 1, alpha: 2, radius: 24, type: 'TEXT', text: 'ÚKOL', color: color });
-      bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 + 1, alpha: 2, radius: 24, text: 'SPLNĚN!', color: color });
+      bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 + 1, alpha: 2, radius: 24, type: 'TEXT', text: 'SPLNĚN!', color: color });
       generateQuest(q.level + 1, gameMode);
   };
 
