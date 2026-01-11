@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, Difficulty, GridCell, Player, Lemming, BloodSplat, GameMode, Tetromino, Quest, QuestObjective, QuestObjectiveType, ControlScheme, ScoreEntry, KillerEntry } from './types';
+import { GameState, Difficulty, GridCell, Player, Lemming, Particle, GameMode, Tetromino, Quest, QuestObjective, QuestObjectiveType, ControlScheme, ScoreEntry, KillerEntry } from './types';
 import { COLS, ROWS, BLOCK_SIZE, RANDOM_TETROMINO, DIFFICULTY_SPEEDS, MAX_LEMMINGS } from './constants';
 import { getTopScores, getTopKillers, saveScore, saveKiller } from './services/storageService';
 import { saveScoreRemote, saveKillerRemote, fetchTopScoresRemote, fetchTopKillersRemote } from './services/databaseService';
@@ -48,13 +48,17 @@ export default function App() {
   const gridRef = useRef<GridCell[][]>([]);
   const playerRef = useRef<Player | null>(null);
   const lemmingsRef = useRef<Lemming[]>([]);
-  const bloodRef = useRef<BloodSplat[]>([]); 
+  const particlesRef = useRef<Particle[]>([]); 
   const isSpawningRef = useRef<boolean>(false);
   const linesToSpawnLemmingsRef = useRef<number>(0);
   const killsInCurrentFrameRef = useRef<number>(0);
   const nextPieceRef = useRef<Tetromino>(RANDOM_TETROMINO());
   const questRef = useRef<Quest | null>(null);
   const questsCompletedRef = useRef<number>(0); 
+  
+  // Audio Refs for immediate access
+  const walkingCountRef = useRef<number>(0);
+  const trappedCountRef = useRef<number>(0);
   
   const touchStartRef = useRef<{x: number, y: number, time: number} | null>(null);
   const touchLastPosRef = useRef<{x: number, y: number} | null>(null);
@@ -103,13 +107,15 @@ export default function App() {
     setNextPieceState(nextP);
 
     lemmingsRef.current = [];
-    bloodRef.current = [];
+    particlesRef.current = [];
     setScore(0);
     setLemmingsKilled(0);
     setLemmingsSaved(0);
     setQuestsCompleted(0);
     questsCompletedRef.current = 0;
     setActiveLemmingsCount(0);
+    walkingCountRef.current = 0;
+    trappedCountRef.current = 0;
     isSpawningRef.current = false;
     linesToSpawnLemmingsRef.current = 0;
     
@@ -198,17 +204,24 @@ export default function App() {
           const lemmingCount = lemmingsRef.current.length;
           bonusPoints += lemmingCount * 500 * q.level;
           lemmingsRef.current.forEach(l => {
-             bloodRef.current.push({ x: l.x, y: Math.floor(l.y), alpha: 1.5, radius: 10, type: 'TEXT', text: `+${500 * q.level}`, color: '#4ade80' });
+             createParticleEffect(l.x, l.y, 'TEXT', { text: `+${500 * q.level}`, color: '#4ade80' });
+             createParticleEffect(l.x, l.y, 'SPARK', { count: 5, color: '#4ade80' });
           });
           setLemmingsSaved(prev => prev + lemmingCount);
           lemmingsRef.current = [];
           setActiveLemmingsCount(0);
       } else {
-          bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 + 2.5, alpha: 2, radius: 20, type: 'TEXT', text: `+${bonusPoints}`, color: '#fbbf24' });
+          createParticleEffect(COLS/2, ROWS/2, 'TEXT', { text: `+${bonusPoints}`, color: '#fbbf24', size: 20 });
       }
       setScore(s => s + bonusPoints);
-      bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 - 1, alpha: 2, radius: 24, type: 'TEXT', text: 'ÚKOL', color: '#fbbf24' });
-      bloodRef.current.push({ x: COLS / 2 - 0.5, y: ROWS / 2 + 1, alpha: 2, radius: 24, type: 'TEXT', text: 'SPLNĚN!', color: '#fbbf24' });
+      createParticleEffect(COLS/2, ROWS/2 - 2, 'TEXT', { text: 'ÚKOL', color: '#fbbf24', size: 24 });
+      createParticleEffect(COLS/2, ROWS/2, 'TEXT', { text: 'SPLNĚN!', color: '#fbbf24', size: 24 });
+      
+      // Confetti effect
+      for(let i=0; i<30; i++) {
+        createParticleEffect(COLS/2 + (Math.random()-0.5)*5, ROWS/2 + (Math.random()-0.5)*5, 'DEBRIS', { color: ['#f00', '#0f0', '#00f', '#ff0'][Math.floor(Math.random()*4)] });
+      }
+
       generateQuest(q.level + 1, gameMode);
   };
 
@@ -254,17 +267,75 @@ export default function App() {
 
   const triggerGameOver = () => { setGameState(GameState.GAME_OVER); audioController.stopMusic(); audioController.playGameOver(); playerRef.current = null; isSpawningRef.current = false; };
 
+  const createParticleEffect = (x: number, y: number, type: Particle['type'], options?: { count?: number, color?: string, text?: string, size?: number }) => {
+      const count = options?.count || 1;
+      for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          let speed = 0;
+          let life = 60;
+          let size = options?.size || (Math.random() * 4 + 2);
+          let gravity = 0;
+          let friction = 0.95;
+          
+          if (type === 'BLOOD') {
+              speed = 0.1 + Math.random() * 0.2;
+              life = 100 + Math.random() * 50;
+              gravity = 0.015;
+              friction = 0.98;
+          } else if (type === 'DEBRIS') {
+              speed = 0.1 + Math.random() * 0.4;
+              life = 40 + Math.random() * 20;
+              gravity = 0.02;
+              size = size * 1.5;
+          } else if (type === 'SPARK') {
+              speed = 0.2 + Math.random() * 0.3;
+              life = 20 + Math.random() * 10;
+              gravity = 0.01;
+              size = 2;
+          } else if (type === 'SMOKE') {
+              speed = 0.02 + Math.random() * 0.05;
+              life = 50 + Math.random() * 30;
+              gravity = -0.005; // float up
+              size = 5 + Math.random() * 5;
+          } else if (type === 'TEXT' || type === 'MONEY') {
+              speed = 0.02;
+              life = 80;
+              gravity = -0.005;
+          }
+
+          particlesRef.current.push({
+              x: x, 
+              y: y, 
+              vx: type === 'TEXT' || type === 'MONEY' ? 0 : Math.cos(angle) * speed, 
+              vy: type === 'TEXT' || type === 'MONEY' ? -0.05 : Math.sin(angle) * speed, 
+              life, 
+              maxLife: life,
+              radius: size, 
+              type, 
+              text: options?.text,
+              color: options?.color || '#fff',
+              gravity,
+              friction,
+              rotation: Math.random() * Math.PI,
+              rotSpeed: (Math.random() - 0.5) * 0.2
+          });
+      }
+  };
+
   const update = (time: number) => {
     if (gameState !== GameState.PLAYING) return;
     const deltaTime = time - lastTimeRef.current;
     lastTimeRef.current = time;
-    audioController.updateMusicState(activeLemmingsCount, currentSpeed);
+    
+    audioController.updateMusicState(walkingCountRef.current, trappedCountRef.current, currentSpeed);
+    
     if (!isSpawningRef.current && playerRef.current) {
       dropCounterRef.current += deltaTime;
       if (dropCounterRef.current > currentSpeed) { playerDrop(); dropCounterRef.current = 0; }
     }
     lemmingMoveCounterRef.current += deltaTime;
     if (lemmingMoveCounterRef.current > 33) { updateLemmings(); lemmingMoveCounterRef.current = 0; }
+    
     draw();
     requestRef.current = requestAnimationFrame(update);
   };
@@ -298,20 +369,51 @@ export default function App() {
             const checkWallY = Math.floor(lemming.y);
             
             if (checkWallX < 0 || checkWallX >= COLS || (checkWallY >= 0 && grid[checkWallY][checkWallX].value !== 0)) {
-                lemming.dx *= -1;
+                // Hitted a wall
+                let startedClimbing = false;
+                if (lemming.canClimb && checkWallX >= 0 && checkWallX < COLS && checkWallY - 1 >= 0) {
+                    if (grid[checkWallY - 1][checkWallX].value === 0 && grid[checkWallY - 1][Math.floor(lemming.x)].value === 0) {
+                        lemming.state = 'CLIMBING';
+                        lemming.x = Math.floor(lemming.x) + 0.5;
+                        lemming.y -= 0.1; 
+                        startedClimbing = true;
+                    }
+                }
+                if (!startedClimbing) { lemming.dx *= -1; }
             } else {
                 lemming.x = Math.max(0.1, Math.min(COLS - 0.1, nextX));
             }
         }
+      } else if (lemming.state === 'CLIMBING') {
+          const climbSpeed = 0.04;
+          lemming.y -= climbSpeed;
+          const wallX = Math.floor(lemming.x + lemming.dx);
+          const footY = Math.floor(lemming.y + 1); 
+          
+          if (footY < ROWS && wallX >= 0 && wallX < COLS && grid[footY][wallX].value === 0) {
+               lemming.state = 'FALLING'; lemming.x += lemming.dx * 0.2; 
+          } else {
+              const targetY = Math.floor(lemming.y); 
+              if (lemming.y - targetY < 0.06) { lemming.y = targetY; lemming.x = wallX + 0.5; lemming.state = 'WALKING'; }
+          }
       }
       lemming.frame = (lemming.frame + 0.2) % 4; survivingLemmings.push(lemming);
     });
     
     if (killsInCurrentFrameRef.current > 0) { if (gameMode !== GameMode.CAGE) applyKillScore(killsInCurrentFrameRef.current); reportQuestProgress('KILL_TOTAL', killsInCurrentFrameRef.current); }
-    lemmingsRef.current = survivingLemmings; setActiveLemmingsCount(survivingLemmings.length + countTrappedLemmings()); reportQuestProgress('HAVE_LEMMINGS', survivingLemmings.length, true);
+    lemmingsRef.current = survivingLemmings; 
+    
+    // Update Counts for State and Audio
+    const walking = survivingLemmings.length;
+    const trapped = countTrappedLemmings();
+    walkingCountRef.current = walking;
+    trappedCountRef.current = trapped;
+    setActiveLemmingsCount(walking + trapped); 
+    
+    reportQuestProgress('HAVE_LEMMINGS', survivingLemmings.length, true);
     
     if (isSpawningRef.current && gameState === GameState.PLAYING && !anyLemmingFalling) {
-        if (linesToSpawnLemmingsRef.current > 0) { if (lemmingsRef.current.length + (gameMode === GameMode.CAGE ? countTrappedLemmings() : 0) < MAX_LEMMINGS) spawnLemming(); linesToSpawnLemmingsRef.current--; } else { isSpawningRef.current = false; spawnPiece(); }
+        if (linesToSpawnLemmingsRef.current > 0) { if (lemmingsRef.current.length + (gameMode === GameMode.CAGE ? trapped : 0) < MAX_LEMMINGS) spawnLemming(); linesToSpawnLemmingsRef.current--; } else { isSpawningRef.current = false; spawnPiece(); }
     }
   };
 
@@ -319,17 +421,7 @@ export default function App() {
     audioController.playSquish();
     killsInCurrentFrameRef.current++;
     setLemmingsKilled(prev => prev + 1);
-    
-    const count = 10 + Math.floor(Math.random() * 5);
-    for (let i = 0; i < count; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 0.1 + Math.random() * 0.2;
-        const isDrip = Math.random() > 0.7;
-        bloodRef.current.push({
-            x: lemming.x, y: lemming.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - (isDrip ? 0 : 0.1),
-            alpha: 1 + Math.random(), radius: Math.random() * 4 + 2, type: 'BLOOD', isDrip: isDrip
-        });
-    }
+    createParticleEffect(lemming.x, lemming.y, 'BLOOD', { count: 12, color: '#991b1b' });
   };
 
   const applyKillScore = (count: number) => {
@@ -344,7 +436,21 @@ export default function App() {
     return false;
   };
 
-  const spawnLemming = () => { audioController.playLemmingSpawn(); const x = Math.floor(Math.random() * (COLS - 2)) + 1; lemmingsRef.current.push({ id: Date.now() + Math.random(), x: x + 0.5, y: 0, dx: Math.random() > 0.5 ? 1 : -1, dy: 0, state: 'FALLING', frame: 0 }); };
+  const spawnLemming = () => { 
+      audioController.playLemmingSpawn(); 
+      const x = Math.floor(Math.random() * (COLS - 2)) + 1; 
+      createParticleEffect(x + 0.5, 0, 'SMOKE', { count: 5, color: '#e5e7eb' });
+      lemmingsRef.current.push({ 
+          id: Date.now() + Math.random(), 
+          x: x + 0.5, 
+          y: 0, 
+          dx: Math.random() > 0.5 ? 1 : -1, 
+          dy: 0, 
+          state: 'FALLING', 
+          frame: 0,
+          canClimb: Math.random() < 0.15 
+      }); 
+  };
 
   const playerDrop = () => { if (!playerRef.current) return; const p = playerRef.current; p.y++; if (!isValidMove(p, gridRef.current)) { p.y--; lockPiece(); } };
 
@@ -368,7 +474,21 @@ export default function App() {
     audioController.playLand(); const { x, y, tetromino } = playerRef.current; const grid = gridRef.current;
     if (y < 0) { triggerGameOver(); return; }
     const placed: {x: number, y: number}[] = []; let gameOver = false;
-    tetromino.shape.forEach((row, dy) => row.forEach((val, dx) => { if (val) { const gy = y + dy; const gx = x + dx; if (gy >= 0 && gy < ROWS) placed.push({x: gx, y: gy}); else if (gy < 0) gameOver = true; } }));
+    
+    // Impact effect
+    tetromino.shape.forEach((row, dy) => row.forEach((val, dx) => { 
+        if (val) {
+            const gy = y + dy; const gx = x + dx; 
+            if (gy >= 0 && gy < ROWS) placed.push({x: gx, y: gy}); else if (gy < 0) gameOver = true; 
+            if (isValidMove({ ...playerRef.current!, y: y + 1 }, grid)) return; 
+             // Bottom blocks create sparks/dust
+             if (row[dx] && (dy === tetromino.shape.length - 1 || !tetromino.shape[dy+1][dx])) {
+                 createParticleEffect(gx + 0.5, gy + 1, 'SPARK', { count: 2, color: '#fbbf24' });
+                 createParticleEffect(gx + 0.5, gy + 1, 'SMOKE', { count: 1, size: 2, color: '#d1d5db' });
+             }
+        } 
+    }));
+
     if (gameOver) { triggerGameOver(); return; }
     placed.forEach(p => grid[p.y][p.x] = { value: 1, color: tetromino.color });
     
@@ -385,9 +505,14 @@ export default function App() {
     let lines = 0; let totalSold = 0;
     for (let r = 0; r < ROWS; r++) {
       if (grid[r].every(c => c.value !== 0)) {
-        if (gameMode === GameMode.CAGE) grid[r].forEach((c, ci) => { if (c.hasLemming) { totalSold++; setLemmingsKilled(prev => prev + 1); bloodRef.current.push({ x: ci, y: r, alpha: 1.5, radius: 20, type: 'MONEY', text: '$' }); } });
+        if (gameMode === GameMode.CAGE) grid[r].forEach((c, ci) => { if (c.hasLemming) { totalSold++; setLemmingsKilled(prev => prev + 1); createParticleEffect(ci, r, 'MONEY', { text: '$' }); } });
         lines++; 
         
+        // Explosion Effect for the line
+        grid[r].forEach((cell, ci) => {
+             createParticleEffect(ci + 0.5, r + 0.5, 'DEBRIS', { count: 4, color: cell.color });
+        });
+
         // Zabití Lemmingů v odmazávaném řádku (propadnou se do prázdna)
         const inThisRow: Lemming[] = [];
         const afterRowClear: Lemming[] = [];
@@ -402,11 +527,12 @@ export default function App() {
         lemmingsRef.current = afterRowClear;
         
         grid.splice(r, 1); grid.unshift(Array.from({length: COLS}, () => ({ value: 0, color: '' })));
-        bloodRef.current.forEach(p => { if (p.y < r) p.y += 1; });
+        
+        // Shift particles
+        particlesRef.current.forEach(p => { if (p.y < r) p.y += 1; });
       }
     }
     
-    // Kontrola rozdrcení po posunu řádků (pokud lemming spadl přímo na blok nebo mu blok spadl na hlavu)
     checkSquashAfterShift();
     
     if (lines > 0) {
@@ -438,22 +564,54 @@ export default function App() {
       if (cell.value) drawBlock(ctx, x, y, cell.color, false, cell.hasLemming); else { ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 0.1; ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE); }
     }));
     
-    bloodRef.current.forEach(p => {
-        const cx = p.x * BLOCK_SIZE + BLOCK_SIZE/2; const cy = p.y * BLOCK_SIZE + BLOCK_SIZE/2;
+    // Draw Particles
+    particlesRef.current.forEach(p => {
+        const cx = p.x * BLOCK_SIZE; 
+        const cy = p.y * BLOCK_SIZE;
+        const opacity = p.life / p.maxLife;
+        
+        ctx.save();
+        ctx.translate(cx, cy);
+        if (p.rotation) ctx.rotate(p.rotation);
+        
         if (p.type === 'BLOOD') {
-            ctx.fillStyle = `rgba(130, 0, 0, ${Math.min(1, p.alpha)})`;
-            if (p.isDrip) { ctx.beginPath(); ctx.arc(cx, cy, p.radius, 0, Math.PI * 2); ctx.fill(); ctx.fillRect(cx - p.radius * 0.5, cy - p.radius * 2, p.radius, p.radius * 2); }
-            else { ctx.beginPath(); ctx.arc(cx, cy, p.radius, 0, Math.PI * 2); ctx.fill(); }
-            if (p.isDrip) { p.y += 0.015; p.alpha -= 0.005; } else { if (p.vx !== undefined) p.x += p.vx; if (p.vy !== undefined) p.y += p.vy; p.vy = (p.vy || 0) + 0.01; p.vx = (p.vx || 0) * 0.98; p.alpha -= 0.02; }
-        } else if (p.type === 'MONEY') {
-            ctx.fillStyle = `rgba(34, 197, 94, ${p.alpha})`; ctx.font = `bold ${p.radius}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(p.text || '$', cx, cy - (1.5 - p.alpha) * 30); p.alpha -= 0.02;
-        } else if (p.type === 'TEXT') {
-            ctx.fillStyle = p.color || '#fff'; ctx.globalAlpha = Math.min(1, p.alpha); ctx.font = `bold ${p.radius}px "Press Start 2P"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillText(p.text || '', cx, cy); ctx.globalAlpha = 1; p.alpha -= 0.01;
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = opacity;
+            ctx.beginPath(); ctx.arc(0, 0, p.radius * opacity, 0, Math.PI * 2); ctx.fill();
+        } else if (p.type === 'DEBRIS') {
+             ctx.fillStyle = p.color;
+             ctx.globalAlpha = opacity;
+             ctx.fillRect(-p.radius/2, -p.radius/2, p.radius, p.radius);
+        } else if (p.type === 'SMOKE') {
+             ctx.fillStyle = p.color;
+             ctx.globalAlpha = opacity * 0.5;
+             ctx.beginPath(); ctx.arc(0, 0, p.radius, 0, Math.PI * 2); ctx.fill();
+        } else if (p.type === 'SPARK') {
+             ctx.fillStyle = p.color;
+             ctx.globalAlpha = opacity;
+             ctx.fillRect(-1, -1, 2, 2);
+        } else if (p.type === 'TEXT' || p.type === 'MONEY') {
+             ctx.fillStyle = p.color; 
+             ctx.globalAlpha = opacity;
+             ctx.font = `bold ${p.radius}px "Press Start 2P"`; 
+             ctx.textAlign = 'center'; 
+             ctx.textBaseline = 'middle';
+             ctx.fillText(p.text || '', 0, 0); 
         }
+        ctx.restore();
+
+        // Update Particle Physics
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vx *= p.friction || 1;
+        p.vy *= p.friction || 1;
+        if (p.gravity) p.vy += p.gravity;
+        if (p.rotSpeed) p.rotation = (p.rotation || 0) + p.rotSpeed;
+        p.life--;
     });
-    bloodRef.current = bloodRef.current.filter(b => b.alpha > 0 && b.y < ROWS + 2);
+    
+    // Clean dead particles
+    particlesRef.current = particlesRef.current.filter(p => p.life > 0);
     
     if (playerRef.current && !isSpawningRef.current) {
         const ghostY = getGhostY(playerRef.current, gridRef.current);
@@ -473,16 +631,63 @@ export default function App() {
   };
 
   const drawLemming = (ctx: CanvasRenderingContext2D, lemming: Lemming) => {
-    // FIX: Subtract 0.5 from x because lemming.x is the center point, but we draw from top-left
     const px = (lemming.x - 0.5) * BLOCK_SIZE; 
     const py = lemming.y * BLOCK_SIZE; 
     const size = BLOCK_SIZE;
     
-    ctx.fillStyle = '#4ade80'; ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3); ctx.fillStyle = '#3b82f6'; ctx.fillRect(px + size*0.3, py + size*0.4, size*0.4, size*0.4);
-    ctx.fillStyle = '#fff'; const eye1X = px + size*0.4; const eye2X = px + size*0.6; const eyeY = py + size*0.25; const eyeSize = size * 0.12; ctx.beginPath(); ctx.arc(eye1X, eyeY, eyeSize, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(eye2X, eyeY, eyeSize, 0, Math.PI*2); ctx.fill();
-    let pupX = 0; let pupY = 0; if (playerRef.current) { const angle = Math.atan2((playerRef.current.y + 1.5) * BLOCK_SIZE - eyeY, (playerRef.current.x + 1.5) * BLOCK_SIZE - (eye1X + eye2X)/2); pupX = Math.cos(angle) * 1.5; pupY = Math.sin(angle) * 1.5; }
-    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(eye1X + pupX, eyeY + pupY, eyeSize/2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(eye2X + pupX, eyeY + pupY, eyeSize/2, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#fca5a5'; if (lemming.state === 'WALKING') { const leg = Math.sin(lemming.frame * Math.PI) * 5; ctx.fillRect(px + size*0.35 + leg, py + size*0.8, size*0.1, size*0.2); ctx.fillRect(px + size*0.55 - leg, py + size*0.8, size*0.1, size*0.2); } else { ctx.fillRect(px + size*0.35, py + size*0.7, size*0.1, size*0.2); ctx.fillRect(px + size*0.55, py + size*0.7, size*0.1, size*0.2); ctx.fillStyle = '#fff'; ctx.fillRect(px + size*0.1, py + size*0.3, size*0.8, size*0.1); }
+    // Body
+    ctx.fillStyle = '#4ade80'; // Green Hair
+    ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3); 
+    
+    ctx.fillStyle = '#3b82f6'; // Blue Shirt
+    ctx.fillRect(px + size*0.3, py + size*0.4, size*0.4, size*0.4);
+
+    // Eyes
+    ctx.fillStyle = '#fff'; 
+    const eye1X = px + size*0.4; 
+    const eye2X = px + size*0.6; 
+    const eyeY = py + size*0.25; 
+    const eyeSize = size * 0.12; 
+    ctx.beginPath(); ctx.arc(eye1X, eyeY, eyeSize, 0, Math.PI*2); ctx.fill(); 
+    ctx.beginPath(); ctx.arc(eye2X, eyeY, eyeSize, 0, Math.PI*2); ctx.fill();
+    
+    // Pupils
+    let pupX = 0; let pupY = 0; 
+    if (lemming.state === 'CLIMBING') {
+        pupY = -1.5; // Look up when climbing
+    } else if (playerRef.current) { 
+        const angle = Math.atan2((playerRef.current.y + 1.5) * BLOCK_SIZE - eyeY, (playerRef.current.x + 1.5) * BLOCK_SIZE - (eye1X + eye2X)/2); 
+        pupX = Math.cos(angle) * 1.5; pupY = Math.sin(angle) * 1.5; 
+    }
+    ctx.fillStyle = '#000'; 
+    ctx.beginPath(); ctx.arc(eye1X + pupX, eyeY + pupY, eyeSize/2, 0, Math.PI*2); ctx.fill(); 
+    ctx.beginPath(); ctx.arc(eye2X + pupX, eyeY + pupY, eyeSize/2, 0, Math.PI*2); ctx.fill();
+
+    // Legs / Arms based on state
+    ctx.fillStyle = '#fca5a5'; 
+    
+    if (lemming.state === 'WALKING') { 
+        const leg = Math.sin(lemming.frame * Math.PI) * 5; 
+        ctx.fillRect(px + size*0.35 + leg, py + size*0.8, size*0.1, size*0.2); 
+        ctx.fillRect(px + size*0.55 - leg, py + size*0.8, size*0.1, size*0.2); 
+    } else if (lemming.state === 'CLIMBING') {
+        // Climbing animation: Hands up/down
+        const armOffset = Math.sin(lemming.frame * Math.PI) * 3;
+        // Arms reaching up/pulling
+        ctx.fillRect(px + size*0.2, py + size*0.3 + armOffset, size*0.15, size*0.3); 
+        ctx.fillRect(px + size*0.65, py + size*0.3 - armOffset, size*0.15, size*0.3);
+        // Legs dangling/kicking
+        const legOffset = Math.cos(lemming.frame * Math.PI) * 2;
+        ctx.fillRect(px + size*0.35, py + size*0.8 + legOffset, size*0.1, size*0.2); 
+        ctx.fillRect(px + size*0.55, py + size*0.8 - legOffset, size*0.1, size*0.2); 
+    } else { 
+        // Falling
+        ctx.fillRect(px + size*0.35, py + size*0.7, size*0.1, size*0.2); 
+        ctx.fillRect(px + size*0.55, py + size*0.7, size*0.1, size*0.2); 
+        // Parachute/Hands up panic
+        ctx.fillStyle = '#fff'; 
+        ctx.fillRect(px + size*0.1, py + size*0.3, size*0.8, size*0.1); 
+    }
   };
 
   useEffect(() => {

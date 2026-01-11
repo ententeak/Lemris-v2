@@ -43,21 +43,26 @@ export interface Lemming {
   y: number;
   dx: number; 
   dy: number;
-  state: 'WALKING' | 'FALLING' | 'DYING';
+  state: 'WALKING' | 'FALLING' | 'DYING' | 'CLIMBING';
   frame: number;
+  canClimb: boolean;
 }
 
-export interface BloodSplat {
+export interface Particle {
   x: number;
   y: number;
-  vx?: number;
-  vy?: number;
-  alpha: number;
+  vx: number;
+  vy: number;
+  life: number;      // Current life
+  maxLife: number;   // Total life duration
   radius: number; 
-  type: 'BLOOD' | 'MONEY' | 'TEXT';
+  type: 'BLOOD' | 'MONEY' | 'TEXT' | 'DEBRIS' | 'SMOKE' | 'SPARK';
   text?: string;
-  color?: string;
-  isDrip?: boolean;
+  color: string;
+  rotation?: number;
+  rotSpeed?: number;
+  gravity?: number;
+  friction?: number;
 }
 
 export interface ScoreEntry {
