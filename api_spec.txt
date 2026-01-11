@@ -1,0 +1,114 @@
+=== API SPECIFIKACE PRO LEMRIS 2 (scores.php) ===
+
+Tento soubor popisuje očekávané chování backendového skriptu.
+Komunikace probíhá formátem JSON.
+Cílový endpoint: /api/scores.php (nebo dle konfigurace serveru)
+
+---------------------------------------------------------------------
+1. NAČTENÍ SKÓRE (GET)
+---------------------------------------------------------------------
+Endpoint je volán metodou GET.
+
+Parametry URL:
+- action: "get_scores"
+- difficulty: string ("Lehká", "Střední", "Těžká")
+- mode: string ("Zachraň", "Zabíjej", "Lov")
+
+Očekávaná odpověď (JSON Array):
+[
+  {
+    "name": "Jméno Hráče",
+    "score": 15000,
+    "date": "21.2.2025",
+    "difficulty": "Střední",
+    "mode": "Zabíjej",
+    "quests": 5
+  },
+  ...
+]
+Poznámka: Vraťte maximálně top 10 seřazených sestupně podle score.
+
+---------------------------------------------------------------------
+2. NAČTENÍ VRAHŮ (GET)
+---------------------------------------------------------------------
+Endpoint je volán metodou GET.
+
+Parametry URL:
+- action: "get_killers"
+- difficulty: string ("Lehká", "Střední", "Těžká")
+- mode: string ("Zachraň", "Zabíjej", "Lov")
+
+Očekávaná odpověď (JSON Array):
+[
+  {
+    "name": "Jméno Hráče",
+    "kills": 450,
+    "date": "21.2.2025",
+    "difficulty": "Střední",
+    "mode": "Zabíjej"
+  },
+  ...
+]
+Poznámka: Vraťte maximálně top 10 seřazených sestupně podle kills.
+
+---------------------------------------------------------------------
+3. ULOŽENÍ SKÓRE (POST)
+---------------------------------------------------------------------
+Endpoint je volán metodou POST.
+Hlavička: Content-Type: application/json
+
+Tělo požadavku (JSON):
+{
+  "action": "save_score",
+  "data": {
+    "name": "Jméno Hráče",
+    "score": 12345,
+    "date": "21.2.2025",
+    "difficulty": "Střední",
+    "mode": "Zabíjej",
+    "saved": 10,       // volitelné
+    "killed": 50,      // volitelné
+    "quests": 2        // volitelné
+  }
+}
+
+Očekávaná odpověď (JSON):
+{
+  "success": true,   // nebo false při chybě
+  "message": "Saved" // volitelná zpráva
+}
+
+---------------------------------------------------------------------
+4. ULOŽENÍ VRAHA (POST)
+---------------------------------------------------------------------
+Endpoint je volán metodou POST.
+Hlavička: Content-Type: application/json
+Volá se pouze, pokud hráč někoho zabil (killed > 0).
+
+Tělo požadavku (JSON):
+{
+  "action": "save_killer",
+  "data": {
+    "name": "Jméno Hráče",
+    "kills": 50,
+    "date": "21.2.2025",
+    "difficulty": "Střední",
+    "mode": "Zabíjej"
+  }
+}
+
+Očekávaná odpověď (JSON):
+{
+  "success": true,
+  "message": "Saved"
+}
+
+---------------------------------------------------------------------
+OBECNÉ CHYBY
+---------------------------------------------------------------------
+Pokud nastane chyba databáze nebo validace, backend by měl vrátit HTTP status 200 (aby to frontend nerozbilo) ale s JSONem:
+{
+  "success": false,
+  "error": "Popis chyby"
+}
+Frontend v tuto chvíli chyby detailně nevypisuje, ale loguje do konzole.

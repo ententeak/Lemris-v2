@@ -12,6 +12,25 @@ const DownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height
 const LeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>;
 const RightIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>;
 const GearIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/></svg>;
+const WifiIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse text-cyan-500">
+        <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+        <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+        <line x1="12" y1="20" x2="12.01" y2="20"></line>
+    </svg>
+);
+const WifiOffIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-500">
+        <line x1="1" y1="1" x2="23" y2="23"></line>
+        <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+        <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+        <line x1="12" y1="20" x2="12.01" y2="20"></line>
+    </svg>
+);
 
 export default function App() {
   // --- Game State ---
@@ -27,8 +46,12 @@ export default function App() {
   const [activeLemmingsCount, setActiveLemmingsCount] = useState(0);
   const [nextPieceState, setNextPieceState] = useState(RANDOM_TETROMINO());
   const [quest, setQuest] = useState<Quest | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // High Scores State
+  const [scoreViewMode, setScoreViewMode] = useState<'LOCAL' | 'GLOBAL'>('LOCAL');
+  const [isLoadingScores, setIsLoadingScores] = useState(false);
+  const [scoreError, setScoreError] = useState<string | null>(null);
   const [topScores, setTopScores] = useState<ScoreEntry[]>([]);
   const [topKillers, setTopKillers] = useState<KillerEntry[]>([]);
 
@@ -67,15 +90,33 @@ export default function App() {
 
   // --- Load Scores ---
   const loadScores = useCallback(async () => {
-    const localScores = getTopScores(difficulty, gameMode);
-    const localKillers = getTopKillers(difficulty, gameMode);
-    const remoteScores = await fetchTopScoresRemote(difficulty, gameMode);
-    const remoteKillers = await fetchTopKillersRemote(difficulty, gameMode);
-    const mergedScores = [...remoteScores, ...localScores].sort((a, b) => b.score - a.score).slice(0, 10);
-    const mergedKillers = [...remoteKillers, ...localKillers].sort((a, b) => b.kills - a.kills).slice(0, 10);
-    setTopScores(mergedScores);
-    setTopKillers(mergedKillers);
-  }, [difficulty, gameMode]);
+    setScoreError(null);
+    setTopScores([]);
+    setTopKillers([]);
+
+    if (scoreViewMode === 'LOCAL') {
+        const localScores = getTopScores(difficulty, gameMode);
+        const localKillers = getTopKillers(difficulty, gameMode);
+        setTopScores(localScores);
+        setTopKillers(localKillers);
+    } else {
+        setIsLoadingScores(true);
+        try {
+            // Initiate both fetches in parallel
+            const [remoteScores, remoteKillers] = await Promise.all([
+                fetchTopScoresRemote(difficulty, gameMode),
+                fetchTopKillersRemote(difficulty, gameMode)
+            ]);
+            setTopScores(remoteScores);
+            setTopKillers(remoteKillers);
+        } catch (e) {
+            console.warn("Could not fetch global scores", e);
+            setScoreError("Chyba spojení");
+        } finally {
+            setIsLoadingScores(false);
+        }
+    }
+  }, [difficulty, gameMode, scoreViewMode]);
 
   useEffect(() => {
     if (gameState === GameState.MENU) loadScores();
@@ -701,7 +742,26 @@ export default function App() {
   const handleTouchMove = (e: React.TouchEvent) => { if (controlScheme !== 'SWIPE' || gameState !== GameState.PLAYING || !touchLastPosRef.current || !touchStartRef.current) return; const touch = e.touches[0]; const deltaX = touch.clientX - touchLastPosRef.current.x; if (touchAxisRef.current === 'none') { if (Math.abs(touch.clientX - touchStartRef.current.x) > 15) touchAxisRef.current = 'x'; else if (Math.abs(touch.clientY - touchStartRef.current.y) > 15) touchAxisRef.current = 'y'; } if (touchAxisRef.current === 'x' && Math.abs(deltaX) > 30) { if (softDropIntervalRef.current) { clearInterval(softDropIntervalRef.current); softDropIntervalRef.current = null; } const steps = Math.floor(Math.abs(deltaX) / 30); for(let i=0; i<steps; i++) playerMove(deltaX > 0 ? 1 : -1); touchLastPosRef.current.x = touch.clientX; } touchLastPosRef.current.y = touch.clientY; };
   const handleTouchEnd = (e: React.TouchEvent) => { if (controlScheme !== 'SWIPE' || gameState !== GameState.PLAYING || !touchStartRef.current) return; if (softDropIntervalRef.current) { clearInterval(softDropIntervalRef.current); softDropIntervalRef.current = null; } const touch = e.changedTouches[0]; const deltaY = touch.clientY - touchStartRef.current.y; const deltaX = touch.clientX - touchStartRef.current.x; if (Date.now() - touchStartRef.current.time < 300) { if (Math.abs(deltaY) > Math.abs(deltaX)) { if (Math.abs(deltaY) > 60) { if (deltaY > 0) playerHardDrop(); else playerRotate(); } } else if (Math.abs(deltaX) < 15 && Math.abs(deltaY) < 15) playerRotate(); } touchStartRef.current = null; touchLastPosRef.current = null; touchAxisRef.current = 'none'; };
 
-  const saveHighScore = async () => { if (!playerName.trim()) return; const scoreData = { name: playerName, score, date: new Date().toLocaleDateString(), difficulty, mode: gameMode, saved: lemmingsSaved, killed: lemmingsKilled, quests: questsCompletedRef.current }; saveScore(scoreData); await saveScoreRemote(scoreData); if (lemmingsKilled > 0) { const killerData = { name: playerName, kills: lemmingsKilled, date: new Date().toLocaleDateString(), difficulty, mode: gameMode }; saveKiller(killerData); await saveKillerRemote(killerData); } setGameState(GameState.MENU); };
+  const saveHighScore = () => { 
+      if (!playerName.trim()) return; 
+      
+      // 1. Immediate Local Save & Transition
+      const scoreData = { name: playerName, score, date: new Date().toLocaleDateString(), difficulty, mode: gameMode, saved: lemmingsSaved, killed: lemmingsKilled, quests: questsCompletedRef.current }; 
+      saveScore(scoreData); 
+      
+      // 2. Fire and Forget Remote Upload
+      // We don't await this, so the UI updates instantly
+      saveScoreRemote(scoreData).catch(err => console.error("Background score upload failed", err));
+
+      if (lemmingsKilled > 0) { 
+          const killerData = { name: playerName, kills: lemmingsKilled, date: new Date().toLocaleDateString(), difficulty, mode: gameMode }; 
+          saveKiller(killerData); 
+          saveKillerRemote(killerData).catch(err => console.error("Background killer upload failed", err));
+      } 
+      
+      // 3. Return to Menu immediately
+      setGameState(GameState.MENU);
+  };
 
   const renderNextPiece = (size: number = 10) => ( <div className="grid gap-px" style={{ gridTemplateColumns: `repeat(${nextPieceState.shape[0].length}, ${size}px)` }}> {nextPieceState.shape.map((row, y) => row.map((val, x) => ( <div key={`${x}-${y}`} className={`w-${size/4} h-${size/4}`} style={{ width: size, height: size, backgroundColor: val ? nextPieceState.color : 'transparent' }} /> )))} </div> );
 
@@ -737,10 +797,46 @@ export default function App() {
           <div className="w-full max-w-sm flex flex-col gap-2 pb-safe z-20 md:hidden pointer-events-auto mb-2"><div className="flex justify-between w-full px-4"><div className="flex gap-3"><button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerMove(-1)}><LeftIcon /></button><button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerMove(1)}><RightIcon /></button></div><div className="flex gap-3"><button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerDrop()}><DownIcon /></button><button className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center backdrop-blur-md active:bg-red-500/30 border-2 border-red-500/30" onClick={() => playerRotate()}><RotateIcon /></button></div></div></div>
       )}
       {gameState === GameState.MENU && !showSettings && (
-        <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-start z-50 p-6 overflow-y-auto"><div className="pt-10 flex flex-col items-center w-full"><h1 className="font-retro text-4xl md:text-6xl text-cyan-500 mb-2 text-center drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">LEMRIS 2</h1><p className="text-[8px] text-gray-500 mb-6 tracking-[0.3em] uppercase">Save or Slaughter. You decide.</p><div className="flex flex-wrap justify-center gap-2 mb-6 bg-gray-900 p-1 rounded-xl border border-gray-800"><button onClick={() => setGameMode(GameMode.SAVE)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.SAVE ? 'bg-green-600 text-white shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'text-gray-500 hover:text-white'}`}>ZACHRAŇ</button><button onClick={() => setGameMode(GameMode.KILL)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.KILL ? 'bg-red-600 text-white shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-gray-500 hover:text-white'}`}>ZABÍJEJ</button><button onClick={() => setGameMode(GameMode.CAGE)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.CAGE ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.4)]' : 'text-gray-500 hover:text-white'}`}>LOV</button></div><div className="flex gap-4 mb-8">{Object.values(Difficulty).map(d => ( <button key={d} onClick={() => setDifficulty(d)} className={`px-3 py-1.5 rounded-lg font-retro text-[8px] border-2 transition-all ${difficulty === d ? 'bg-cyan-700 border-cyan-400 text-white' : 'border-gray-800 text-gray-600'}`}>{d}</button> ))}</div><button onClick={initGame} className={`px-10 py-5 text-white font-retro text-lg rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] active:translate-y-1 active:shadow-none transition-all mb-10 w-full max-w-xs ${ gameMode === GameMode.SAVE ? 'bg-green-600' : gameMode === GameMode.KILL ? 'bg-red-700' : 'bg-yellow-600' }`}>SPUSTIT HRU</button><div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl text-[9px] mb-10"><div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md"><h3 className="font-retro text-yellow-500 mb-4 text-center tracking-widest uppercase">Globální Skóre</h3><table className="w-full text-left"><thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Úkoly</th><th className="text-right">Body</th></tr></thead><tbody>{topScores.map((s, i) => ( <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[70px] truncate text-gray-300 font-bold">{s.name}</td><td className="text-right text-gray-500">{s.quests || 0}</td><td className="text-right text-yellow-400 font-retro text-[7px]">{s.score}</td></tr> ))}</tbody></table></div><div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md"><h3 className="font-retro text-red-600 mb-4 text-center tracking-widest uppercase">Největší Vrazi</h3><table className="w-full text-left"><thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Mrtvol</th></tr></thead><tbody>{topKillers.map((k, i) => ( <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[90px] truncate text-gray-300 font-bold">{k.name}</td><td className="text-right text-red-500 font-retro text-[7px]">{k.kills}</td></tr> ))}</tbody></table></div></div></div></div>
+        <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-start z-50 p-6 overflow-y-auto">
+            <div className="pt-10 flex flex-col items-center w-full">
+                <h1 className="font-retro text-4xl md:text-6xl text-cyan-500 mb-2 text-center drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">LEMRIS 2</h1>
+                <p className="text-[8px] text-gray-500 mb-6 tracking-[0.3em] uppercase">Save or Slaughter. You decide.</p>
+                <div className="flex flex-wrap justify-center gap-2 mb-6 bg-gray-900 p-1 rounded-xl border border-gray-800"><button onClick={() => setGameMode(GameMode.SAVE)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.SAVE ? 'bg-green-600 text-white shadow-[0_0_10px_rgba(34,197,94,0.4)]' : 'text-gray-500 hover:text-white'}`}>ZACHRAŇ</button><button onClick={() => setGameMode(GameMode.KILL)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.KILL ? 'bg-red-600 text-white shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-gray-500 hover:text-white'}`}>ZABÍJEJ</button><button onClick={() => setGameMode(GameMode.CAGE)} className={`px-4 py-2 rounded-lg font-retro text-[8px] transition-all ${gameMode === GameMode.CAGE ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.4)]' : 'text-gray-500 hover:text-white'}`}>LOV</button></div>
+                <div className="flex gap-4 mb-8">{Object.values(Difficulty).map(d => ( <button key={d} onClick={() => setDifficulty(d)} className={`px-3 py-1.5 rounded-lg font-retro text-[8px] border-2 transition-all ${difficulty === d ? 'bg-cyan-700 border-cyan-400 text-white' : 'border-gray-800 text-gray-600'}`}>{d}</button> ))}</div>
+                <button onClick={initGame} className={`px-10 py-5 text-white font-retro text-lg rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] active:translate-y-1 active:shadow-none transition-all mb-10 w-full max-w-xs ${ gameMode === GameMode.SAVE ? 'bg-green-600' : gameMode === GameMode.KILL ? 'bg-red-700' : 'bg-yellow-600' }`}>SPUSTIT HRU</button>
+                
+                <div className="flex gap-2 mb-4 bg-gray-900 p-1 rounded-lg">
+                    <button onClick={() => setScoreViewMode('LOCAL')} className={`px-4 py-1.5 text-[8px] font-retro rounded transition-all ${scoreViewMode === 'LOCAL' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>MÍSTNÍ</button>
+                    <button onClick={() => setScoreViewMode('GLOBAL')} className={`px-4 py-1.5 text-[8px] font-retro rounded transition-all ${scoreViewMode === 'GLOBAL' ? 'bg-cyan-900 text-white' : 'text-gray-500'}`}>GLOBÁLNÍ</button>
+                </div>
+
+                {isLoadingScores ? (
+                    <div className="flex flex-col items-center justify-center h-48 gap-4">
+                        <WifiIcon />
+                        <span className="text-[9px] text-cyan-500 font-retro animate-pulse">PŘIPOJUJI...</span>
+                    </div>
+                ) : scoreError ? (
+                    <div className="flex flex-col items-center justify-center h-48 gap-4">
+                        <WifiOffIcon />
+                        <span className="text-[9px] text-red-500 font-retro">{scoreError}</span>
+                        <button onClick={loadScores} className="px-3 py-1 bg-gray-800 text-[8px] rounded border border-gray-700 hover:bg-gray-700">ZKUSIT ZNOVU</button>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl text-[9px] mb-8">
+                        <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md"><h3 className="font-retro text-yellow-500 mb-4 text-center tracking-widest uppercase">Globální Skóre</h3><table className="w-full text-left"><thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Úkoly</th><th className="text-right">Body</th></tr></thead><tbody>{topScores.map((s, i) => ( <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[70px] truncate text-gray-300 font-bold">{s.name}</td><td className="text-right text-gray-500">{s.quests || 0}</td><td className="text-right text-yellow-400 font-retro text-[7px]">{s.score}</td></tr> ))}</tbody></table></div>
+                        <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md"><h3 className="font-retro text-red-600 mb-4 text-center tracking-widest uppercase">Největší Vrazi</h3><table className="w-full text-left"><thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Mrtvol</th></tr></thead><tbody>{topKillers.map((k, i) => ( <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[90px] truncate text-gray-300 font-bold">{k.name}</td><td className="text-right text-red-500 font-retro text-[7px]">{k.kills}</td></tr> ))}</tbody></table></div>
+                    </div>
+                )}
+                
+                <div className="mt-4 mb-8 text-center opacity-40 hover:opacity-100 transition-opacity">
+                    <p className="text-[7px] text-gray-400 font-retro mb-1">Inspirováno kultovní hrou <span className="text-cyan-600">Lemris (1993)</span> od <span className="text-white">Jana "Cajti" Zeithamla</span>.</p>
+                    <p className="text-[7px] text-gray-500 font-retro">Volné pokračování vytvořil <span className="text-gray-300">Petr "Ententeak" Ferst</span> s pomocí <span className="text-purple-400">Google Gemini</span> (AI Studio).</p>
+                </div>
+            </div>
+        </div>
       )}
       {gameState === GameState.GAME_OVER && (
-          <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center z-50 p-6 overflow-y-auto"><h2 className="font-retro text-4xl text-white mb-6 text-center drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">KONEC HRY</h2><div className="bg-black/60 p-6 rounded-3xl text-center mb-8 w-full max-w-sm border border-red-800/50 backdrop-blur-md"><div className="mb-2 text-gray-500 text-[9px] uppercase tracking-widest">Dosažené skóre</div><div className={`font-retro text-3xl mb-6 ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div><div className="grid grid-cols-2 gap-3 mb-6"><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">ÚKOLY</div><div className="font-retro text-base text-cyan-400">{questsCompleted}</div></div><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">{gameMode === GameMode.SAVE ? 'SAVED' : 'KILLS'}</div><div className={`font-retro text-base ${gameMode === GameMode.SAVE ? 'text-green-500' : 'text-red-500'}`}>{gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}</div></div></div><div className="flex flex-col gap-2 text-left"><label className="text-[9px] uppercase text-gray-500 tracking-widest ml-1">Tvé jméno:</label><input type="text" maxLength={12} placeholder="Hráč" className="bg-black border border-gray-800 text-white p-4 rounded-xl font-retro text-[10px] text-center focus:border-cyan-600 outline-none transition-all" value={playerName} onChange={(e) => setPlayerName(e.target.value)} autoFocus /></div></div><button onClick={saveHighScore} className="px-10 py-5 bg-green-700 hover:bg-green-600 text-white font-retro rounded-2xl shadow-xl active:translate-y-1 transition-all w-full max-xs">ULOŽIT VÝSLEDEK</button></div>
+          <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center z-50 p-6 overflow-y-auto"><h2 className="font-retro text-4xl text-white mb-6 text-center drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">KONEC HRY</h2><div className="bg-black/60 p-6 rounded-3xl text-center mb-8 w-full max-w-sm border border-red-800/50 backdrop-blur-md"><div className="mb-2 text-gray-500 text-[9px] uppercase tracking-widest">Dosažené skóre</div><div className={`font-retro text-3xl mb-6 ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div><div className="grid grid-cols-2 gap-3 mb-6"><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">ÚKOLY</div><div className="font-retro text-base text-cyan-400">{questsCompleted}</div></div><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">{gameMode === GameMode.SAVE ? 'SAVED' : 'KILLS'}</div><div className={`font-retro text-base ${gameMode === GameMode.SAVE ? 'text-green-500' : 'text-red-500'}`}>{gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}</div></div></div><div className="flex flex-col gap-2 text-left"><label className="text-[9px] uppercase text-gray-500 tracking-widest ml-1">Tvé jméno:</label><input type="text" maxLength={12} placeholder="Hráč" className="bg-black border border-gray-800 text-white p-4 rounded-xl font-retro text-[10px] text-center focus:border-cyan-600 outline-none transition-all" value={playerName} onChange={(e) => setPlayerName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveHighScore()} autoFocus /></div></div><button onClick={saveHighScore} disabled={!playerName.trim()} className={`px-10 py-5 font-retro rounded-2xl shadow-xl transition-all w-full max-w-xs ${!playerName.trim() ? 'bg-gray-700 cursor-not-allowed text-gray-400' : 'bg-green-700 hover:bg-green-600 text-white active:translate-y-1'}`}>ULOŽIT VÝSLEDEK</button></div>
       )}
       {showSettings && (
           <div className="absolute inset-0 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center z-50 p-6"><h2 className="font-retro text-2xl text-cyan-400 mb-8 tracking-[0.2em]">NASTAVENÍ</h2><div className="w-full max-w-sm bg-gray-900 p-6 rounded-3xl border border-gray-800 shadow-2xl"><div className="mb-8"><label className="block text-gray-500 text-[9px] uppercase mb-4 tracking-widest">Metoda ovládání</label><div className="flex bg-black rounded-xl p-1 gap-1 border border-gray-800"><button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'BUTTONS' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('BUTTONS')}>TLAČÍTKA</button><button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'SWIPE' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('SWIPE')}>SWIPE</button></div></div><div className="space-y-6"><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Hudba</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(musicVol * 100)}%</span></div><input type="range" min="0" max="1" step="0.1" value={musicVol} onChange={handleMusicVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" /></div><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Zvuky</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(sfxVol * 100)}%</span></div><input type="range" min="0" max="1" step="0.1" value={sfxVol} onChange={handleSfxVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" /></div></div></div><button onClick={() => setShowSettings(false)} className="mt-10 px-12 py-4 bg-green-600 text-white font-retro rounded-xl shadow-lg active:scale-95 transition-all">ZAVŘÍT</button></div>
