@@ -835,6 +835,11 @@ export default function App() {
       )}
       {gameState === GameState.MENU && !showSettings && (
         <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-start z-50 p-6 overflow-y-auto">
+            <div className="absolute top-4 right-4">
+                 <button onClick={() => setShowSettings(true)} className="p-2 bg-gray-800 rounded-lg border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors">
+                     <GearIcon />
+                 </button>
+            </div>
             <div className="pt-10 flex flex-col items-center w-full">
                 <h1 className="font-retro text-4xl md:text-6xl text-cyan-500 mb-2 text-center drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">LEMRIS 2</h1>
                 <p className="text-[8px] text-gray-500 mb-6 tracking-[0.3em] uppercase">Save or Slaughter. You decide.</p>
