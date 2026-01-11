@@ -11,7 +11,7 @@ const RotateIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" heig
 const DownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>;
 const LeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>;
 const RightIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>;
-const GearIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/></svg>;
+const GearIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/></svg>;
 const WifiIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse text-cyan-500">
         <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
@@ -87,6 +87,10 @@ export default function App() {
   const touchLastPosRef = useRef<{x: number, y: number} | null>(null);
   const softDropIntervalRef = useRef<number | null>(null);
   const touchAxisRef = useRef<'none' | 'x' | 'y'>('none');
+  
+  // Menu input lock ref
+  const menuLockRef = useRef<boolean>(false);
+  const menuLockTimeoutRef = useRef<number | null>(null);
 
   // --- Load Scores ---
   const loadScores = useCallback(async () => {
@@ -732,7 +736,31 @@ export default function App() {
   };
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => { if (gameState === GameState.MENU && e.key === 'Enter') initGame(); else if (gameState === GameState.PLAYING) switch(e.key) { case 'ArrowLeft': playerMove(-1); break; case 'ArrowRight': playerMove(1); break; case 'ArrowDown': playerDrop(); break; case 'ArrowUp': playerRotate(); break; case ' ': playerHardDrop(); break; case 'p': case 'P': setGameState(GameState.PAUSED); audioController.stopMusic(); break; } else if (gameState === GameState.PAUSED && !showSettings && (e.key === 'p' || e.key === 'P')) { setGameState(GameState.PLAYING); audioController.startMusic(); } };
+    const handleKeyDown = (e: KeyboardEvent) => { 
+        if (gameState === GameState.MENU && e.key === 'Enter') {
+            if (!menuLockRef.current) initGame(); 
+        } 
+        else if (gameState === GameState.PLAYING) {
+            switch(e.key) { 
+                case 'ArrowLeft': playerMove(-1); break; 
+                case 'ArrowRight': playerMove(1); break; 
+                case 'ArrowDown': playerDrop(); break; 
+                case 'ArrowUp': playerRotate(); break; 
+                case ' ': playerHardDrop(); break; 
+                case 'p': case 'P': case 'Escape': 
+                    setGameState(GameState.PAUSED); 
+                    audioController.stopMusic(); 
+                    break; 
+            } 
+        } else if (gameState === GameState.PAUSED) {
+            if (showSettings && e.key === 'Escape') {
+                setShowSettings(false);
+            } else if (!showSettings && (e.key === 'p' || e.key === 'P' || e.key === 'Escape')) {
+                setGameState(GameState.PLAYING); 
+                audioController.startMusic(); 
+            }
+        }
+    };
     window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
   }, [gameState, initGame, showSettings]);
 
@@ -750,7 +778,6 @@ export default function App() {
       saveScore(scoreData); 
       
       // 2. Fire and Forget Remote Upload
-      // We don't await this, so the UI updates instantly
       saveScoreRemote(scoreData).catch(err => console.error("Background score upload failed", err));
 
       if (lemmingsKilled > 0) { 
@@ -759,8 +786,18 @@ export default function App() {
           saveKillerRemote(killerData).catch(err => console.error("Background killer upload failed", err));
       } 
       
-      // 3. Return to Menu immediately
+      // 3. Return to Menu immediately with Input Lock
+      menuLockRef.current = true;
       setGameState(GameState.MENU);
+      
+      if (menuLockTimeoutRef.current) {
+          clearTimeout(menuLockTimeoutRef.current);
+      }
+      
+      menuLockTimeoutRef.current = window.setTimeout(() => {
+          menuLockRef.current = false;
+          menuLockTimeoutRef.current = null;
+      }, 2000);
   };
 
   const renderNextPiece = (size: number = 10) => ( <div className="grid gap-px" style={{ gridTemplateColumns: `repeat(${nextPieceState.shape[0].length}, ${size}px)` }}> {nextPieceState.shape.map((row, y) => row.map((val, x) => ( <div key={`${x}-${y}`} className={`w-${size/4} h-${size/4}`} style={{ width: size, height: size, backgroundColor: val ? nextPieceState.color : 'transparent' }} /> )))} </div> );
