@@ -226,8 +226,16 @@ export default function App() {
       }
       const newObjectives = questRef.current.objectives.map(obj => {
           if (obj.type === targetType) {
-              let newCurrent = isAbsolute ? amount : obj.current + amount;
-              if (obj.type === 'KILL_MULTI' || obj.type === 'SELL_BATCH') if (amount > obj.current) newCurrent = amount;
+              let newCurrent: number;
+              
+              if (obj.type === 'KILL_MULTI' || obj.type === 'SELL_BATCH') {
+                  // High Score logic: Only update if new amount is higher
+                  newCurrent = Math.max(obj.current, amount);
+              } else {
+                  // Cumulative or Absolute logic
+                  newCurrent = isAbsolute ? amount : obj.current + amount;
+              }
+              
               const isNowCompleted = newCurrent >= obj.target;
               if (obj.current !== newCurrent || obj.isCompleted !== isNowCompleted) { changed = true; return { ...obj, current: newCurrent, isCompleted: isNowCompleted }; }
           }

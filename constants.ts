@@ -18,7 +18,12 @@ export const TETROMINOS: { [key: string]: Tetromino } = {
 export const RANDOM_TETROMINO = () => {
   const keys = Object.keys(TETROMINOS);
   const randKey = keys[Math.floor(Math.random() * keys.length)];
-  return TETROMINOS[randKey];
+  const t = TETROMINOS[randKey];
+  // Deep copy the shape to ensure mutations (rotations) don't affect the original constant
+  return {
+      ...t,
+      shape: t.shape.map(row => [...row])
+  };
 };
 
 export const DIFFICULTY_SPEEDS: Record<string, number> = {
