@@ -46,6 +46,7 @@ export interface Lemming {
   state: 'WALKING' | 'FALLING' | 'DYING' | 'CLIMBING';
   frame: number;
   canClimb: boolean;
+  isKiller: boolean; // New property
 }
 
 export interface Particle {

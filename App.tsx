@@ -11,7 +11,7 @@ const RotateIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" heig
 const DownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>;
 const LeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>;
 const RightIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>;
-const GearIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/></svg>;
+const RefreshIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>;
 const WifiIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse text-cyan-500">
         <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
@@ -60,6 +60,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [musicVol, setMusicVol] = useState(0.5);
   const [sfxVol, setSfxVol] = useState(0.5);
+  const [showParticles, setShowParticles] = useState(true);
 
   // --- Refs ---
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -131,7 +132,7 @@ export default function App() {
     audioController.init();
     audioController.setMusicVolume(musicVol);
     audioController.setSfxVolume(sfxVol);
-    audioController.startMusic();
+    audioController.startMusic(gameMode); // Pass game mode for theme selection
 
     const newGrid: GridCell[][] = Array.from({ length: ROWS }, () =>
       Array.from({ length: COLS }, () => ({ value: 0, color: '' }))
@@ -321,6 +322,7 @@ export default function App() {
   const triggerGameOver = () => { setGameState(GameState.GAME_OVER); audioController.stopMusic(); audioController.playGameOver(); playerRef.current = null; isSpawningRef.current = false; };
 
   const createParticleEffect = (x: number, y: number, type: Particle['type'], options?: { count?: number, color?: string, text?: string, size?: number }) => {
+      if (!showParticles) return;
       const count = options?.count || 1;
       for (let i = 0; i < count; i++) {
           const angle = Math.random() * Math.PI * 2;
@@ -397,7 +399,30 @@ export default function App() {
     const grid = gridRef.current; const lemmings = lemmingsRef.current; const player = playerRef.current;
     let anyLemmingFalling = false; killsInCurrentFrameRef.current = 0; const survivingLemmings: Lemming[] = [];
     
+    // Check Killer Logic first (simplistic O(N^2) but N is small)
+    for (let i = 0; i < lemmings.length; i++) {
+        if (lemmings[i].isKiller) {
+            for (let j = 0; j < lemmings.length; j++) {
+                if (i !== j && !lemmings[j].isKiller) {
+                    const l1 = lemmings[i];
+                    const l2 = lemmings[j];
+                    const dist = Math.sqrt(Math.pow(l1.x - l2.x, 2) + Math.pow(l1.y - l2.y, 2));
+                    if (dist < 0.8) {
+                         // Killer touches victim
+                         audioController.playSquish();
+                         createParticleEffect(l2.x, l2.y, 'BLOOD', { count: 8, color: '#991b1b' });
+                         // Mark victim as dead (remove from render next frame effectively via filter below)
+                         // We mutate state here to filter out immediately, slightly hacky but efficient for game loop
+                         lemmings[j].state = 'DYING'; 
+                    }
+                }
+            }
+        }
+    }
+
     lemmings.forEach(lemming => {
+      if (lemming.state === 'DYING') return; // Skip dead ones
+
       const gridX = Math.floor(lemming.x); const gridY = Math.floor(lemming.y);
       
       // Detekce rozdrcení blokem (střed Lemminga je uvnitř plného bloku)
@@ -493,6 +518,9 @@ export default function App() {
       audioController.playLemmingSpawn(); 
       const x = Math.floor(Math.random() * (COLS - 2)) + 1; 
       createParticleEffect(x + 0.5, 0, 'SMOKE', { count: 5, color: '#e5e7eb' });
+      
+      const isKiller = Math.random() < 0.005; // 0.5% chance
+      
       lemmingsRef.current.push({ 
           id: Date.now() + Math.random(), 
           x: x + 0.5, 
@@ -501,7 +529,8 @@ export default function App() {
           dy: 0, 
           state: 'FALLING', 
           frame: 0,
-          canClimb: Math.random() < 0.15 
+          canClimb: !isKiller && Math.random() < 0.15, // Killers don't climb usually
+          isKiller: isKiller
       }); 
   };
 
@@ -689,10 +718,21 @@ export default function App() {
     const size = BLOCK_SIZE;
     
     // Body
-    ctx.fillStyle = '#4ade80'; // Green Hair
-    ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3); 
+    if (lemming.isKiller) {
+        ctx.fillStyle = '#991b1b'; // Dark Red Hair
+        ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3); 
+        ctx.fillStyle = '#ef4444'; // Red Shirt
+    } else {
+        ctx.fillStyle = '#4ade80'; // Green Hair
+        ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3); 
+        
+        if (lemming.canClimb) { // Check Property, not State
+            ctx.fillStyle = '#eab308'; // Yellow Shirt for Climbers
+        } else {
+            ctx.fillStyle = '#3b82f6'; // Blue Shirt
+        }
+    }
     
-    ctx.fillStyle = '#3b82f6'; // Blue Shirt
     ctx.fillRect(px + size*0.3, py + size*0.4, size*0.4, size*0.4);
 
     // Eyes
@@ -765,12 +805,12 @@ export default function App() {
                 setShowSettings(false);
             } else if (!showSettings && (e.key === 'p' || e.key === 'P' || e.key === 'Escape')) {
                 setGameState(GameState.PLAYING); 
-                audioController.startMusic(); 
+                audioController.startMusic(gameMode); 
             }
         }
     };
     window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [gameState, initGame, showSettings]);
+  }, [gameState, initGame, showSettings, gameMode]);
 
   useEffect(() => { requestRef.current = requestAnimationFrame(update); return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); }; }, [gameState, difficulty, gameMode, currentSpeed, activeLemmingsCount]); 
 
@@ -780,12 +820,8 @@ export default function App() {
 
   const saveHighScore = () => { 
       if (!playerName.trim()) return; 
-      
-      // 1. Immediate Local Save & Transition
       const scoreData = { name: playerName, score, date: new Date().toLocaleDateString(), difficulty, mode: gameMode, saved: lemmingsSaved, killed: lemmingsKilled, quests: questsCompletedRef.current }; 
       saveScore(scoreData); 
-      
-      // 2. Fire and Forget Remote Upload
       saveScoreRemote(scoreData).catch(err => console.error("Background score upload failed", err));
 
       if (lemmingsKilled > 0) { 
@@ -793,19 +829,10 @@ export default function App() {
           saveKiller(killerData); 
           saveKillerRemote(killerData).catch(err => console.error("Background killer upload failed", err));
       } 
-      
-      // 3. Return to Menu immediately with Input Lock
       menuLockRef.current = true;
       setGameState(GameState.MENU);
-      
-      if (menuLockTimeoutRef.current) {
-          clearTimeout(menuLockTimeoutRef.current);
-      }
-      
-      menuLockTimeoutRef.current = window.setTimeout(() => {
-          menuLockRef.current = false;
-          menuLockTimeoutRef.current = null;
-      }, 2000);
+      if (menuLockTimeoutRef.current) { clearTimeout(menuLockTimeoutRef.current); }
+      menuLockTimeoutRef.current = window.setTimeout(() => { menuLockRef.current = false; menuLockTimeoutRef.current = null; }, 2000);
   };
 
   const renderNextPiece = (size: number = 10) => ( <div className="grid gap-px" style={{ gridTemplateColumns: `repeat(${nextPieceState.shape[0].length}, ${size}px)` }}> {nextPieceState.shape.map((row, y) => row.map((val, x) => ( <div key={`${x}-${y}`} className={`w-${size/4} h-${size/4}`} style={{ width: size, height: size, backgroundColor: val ? nextPieceState.color : 'transparent' }} /> )))} </div> );
@@ -827,8 +854,7 @@ export default function App() {
           <div className="flex-1 flex justify-center pointer-events-auto mt-1"><div className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl text-center backdrop-blur-sm"><div className="text-[8px] text-gray-500 uppercase mb-0.5">Příště</div><div className="flex justify-center scale-[0.6] md:scale-90 origin-top">{renderNextPiece(8)}</div></div></div>
           <div className="flex flex-col gap-1.5 items-end pointer-events-auto">
              <div className="flex gap-1.5">
-                <button onClick={() => { setGameState(GameState.PAUSED); audioController.stopMusic(); setShowSettings(true); }} className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl hover:bg-gray-800 active:bg-gray-700"><GearIcon /></button>
-                <button className="bg-gray-800/80 p-1.5 rounded hover:bg-gray-700 active:bg-gray-600 border border-gray-600" onClick={() => { if (gameState === GameState.PLAYING) { setGameState(GameState.PAUSED); audioController.stopMusic(); } else { setGameState(GameState.PLAYING); audioController.startMusic(); } }}><PauseIcon /></button>
+                <button className="bg-gray-800/80 p-1.5 rounded hover:bg-gray-700 active:bg-gray-600 border border-gray-600" onClick={() => { if (gameState === GameState.PLAYING) { setGameState(GameState.PAUSED); audioController.stopMusic(); } else { setGameState(GameState.PLAYING); audioController.startMusic(gameMode); } }}><PauseIcon /></button>
              </div>
              <div className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl text-center hidden md:block backdrop-blur-sm"><div className="text-[8px] text-gray-500 uppercase mb-0.5">Pop: {activeLemmingsCount}</div><div className="w-20 h-1.5 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-green-500 transition-all duration-300" style={{ width: `${(activeLemmingsCount / MAX_LEMMINGS) * 100}%` }} /></div></div>
           </div>
@@ -841,13 +867,8 @@ export default function App() {
       {gameState === GameState.PLAYING && controlScheme === 'BUTTONS' && (
           <div className="w-full max-w-sm flex flex-col gap-2 pb-safe z-20 md:hidden pointer-events-auto mb-2"><div className="flex justify-between w-full px-4"><div className="flex gap-3"><button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerMove(-1)}><LeftIcon /></button><button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerMove(1)}><RightIcon /></button></div><div className="flex gap-3"><button className="w-12 h-12 bg-white/5 rounded-full flex items-center justify-center backdrop-blur-md active:bg-white/20 border border-white/10" onClick={() => playerDrop()}><DownIcon /></button><button className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center backdrop-blur-md active:bg-red-500/30 border-2 border-red-500/30" onClick={() => playerRotate()}><RotateIcon /></button></div></div></div>
       )}
-      {gameState === GameState.MENU && !showSettings && (
+      {gameState === GameState.MENU && (
         <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-start z-50 p-6 overflow-y-auto">
-            <div className="absolute top-4 right-4">
-                 <button onClick={() => setShowSettings(true)} className="p-2 bg-gray-800 rounded-lg border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors">
-                     <GearIcon />
-                 </button>
-            </div>
             <div className="pt-10 flex flex-col items-center w-full">
                 <h1 className="font-retro text-4xl md:text-6xl text-cyan-500 mb-2 text-center drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">LEMRIS 2</h1>
                 <p className="text-[8px] text-gray-500 mb-6 tracking-[0.3em] uppercase">Save or Slaughter. You decide.</p>
@@ -855,9 +876,12 @@ export default function App() {
                 <div className="flex gap-4 mb-8">{Object.values(Difficulty).map(d => ( <button key={d} onClick={() => setDifficulty(d)} className={`px-3 py-1.5 rounded-lg font-retro text-[8px] border-2 transition-all ${difficulty === d ? 'bg-cyan-700 border-cyan-400 text-white' : 'border-gray-800 text-gray-600'}`}>{d}</button> ))}</div>
                 <button onClick={initGame} className={`px-10 py-5 text-white font-retro text-lg rounded-2xl shadow-[0_4px_0_rgba(0,0,0,0.5)] active:translate-y-1 active:shadow-none transition-all mb-10 w-full max-w-xs ${ gameMode === GameMode.SAVE ? 'bg-green-600' : gameMode === GameMode.KILL ? 'bg-red-700' : 'bg-yellow-600' }`}>SPUSTIT HRU</button>
                 
-                <div className="flex gap-2 mb-4 bg-gray-900 p-1 rounded-lg">
+                <div className="flex gap-2 mb-4 bg-gray-900 p-1 rounded-lg items-center">
                     <button onClick={() => setScoreViewMode('LOCAL')} className={`px-4 py-1.5 text-[8px] font-retro rounded transition-all ${scoreViewMode === 'LOCAL' ? 'bg-gray-700 text-white' : 'text-gray-500'}`}>MÍSTNÍ</button>
                     <button onClick={() => setScoreViewMode('GLOBAL')} className={`px-4 py-1.5 text-[8px] font-retro rounded transition-all ${scoreViewMode === 'GLOBAL' ? 'bg-cyan-900 text-white' : 'text-gray-500'}`}>GLOBÁLNÍ</button>
+                    <button onClick={loadScores} className="p-1.5 text-gray-400 hover:text-white transition-colors ml-2" title="Aktualizovat">
+                        <RefreshIcon />
+                    </button>
                 </div>
 
                 {isLoadingScores ? (
@@ -889,10 +913,10 @@ export default function App() {
           <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center z-50 p-6 overflow-y-auto"><h2 className="font-retro text-4xl text-white mb-6 text-center drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">KONEC HRY</h2><div className="bg-black/60 p-6 rounded-3xl text-center mb-8 w-full max-w-sm border border-red-800/50 backdrop-blur-md"><div className="mb-2 text-gray-500 text-[9px] uppercase tracking-widest">Dosažené skóre</div><div className={`font-retro text-3xl mb-6 ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div><div className="grid grid-cols-2 gap-3 mb-6"><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">ÚKOLY</div><div className="font-retro text-base text-cyan-400">{questsCompleted}</div></div><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">{gameMode === GameMode.SAVE ? 'SAVED' : 'KILLS'}</div><div className={`font-retro text-base ${gameMode === GameMode.SAVE ? 'text-green-500' : 'text-red-500'}`}>{gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}</div></div></div><div className="flex flex-col gap-2 text-left"><label className="text-[9px] uppercase text-gray-500 tracking-widest ml-1">Tvé jméno:</label><input type="text" maxLength={12} placeholder="Hráč" className="bg-black border border-gray-800 text-white p-4 rounded-xl font-retro text-[10px] text-center focus:border-cyan-600 outline-none transition-all" value={playerName} onChange={(e) => setPlayerName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveHighScore()} autoFocus /></div></div><button onClick={saveHighScore} disabled={!playerName.trim()} className={`px-10 py-5 font-retro rounded-2xl shadow-xl transition-all w-full max-w-xs ${!playerName.trim() ? 'bg-gray-700 cursor-not-allowed text-gray-400' : 'bg-green-700 hover:bg-green-600 text-white active:translate-y-1'}`}>ULOŽIT VÝSLEDEK</button></div>
       )}
       {showSettings && (
-          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center z-50 p-6"><h2 className="font-retro text-2xl text-cyan-400 mb-8 tracking-[0.2em]">NASTAVENÍ</h2><div className="w-full max-w-sm bg-gray-900 p-6 rounded-3xl border border-gray-800 shadow-2xl"><div className="mb-8"><label className="block text-gray-500 text-[9px] uppercase mb-4 tracking-widest">Metoda ovládání</label><div className="flex bg-black rounded-xl p-1 gap-1 border border-gray-800"><button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'BUTTONS' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('BUTTONS')}>TLAČÍTKA</button><button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'SWIPE' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('SWIPE')}>SWIPE</button></div></div><div className="space-y-6"><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Hudba</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(musicVol * 100)}%</span></div><input type="range" min="0" max="1" step="0.1" value={musicVol} onChange={handleMusicVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" /></div><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Zvuky</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(sfxVol * 100)}%</span></div><input type="range" min="0" max="1" step="0.1" value={sfxVol} onChange={handleSfxVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" /></div></div></div><button onClick={() => setShowSettings(false)} className="mt-10 px-12 py-4 bg-green-600 text-white font-retro rounded-xl shadow-lg active:scale-95 transition-all">ZAVŘÍT</button></div>
+          <div className="absolute inset-0 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center z-50 p-6"><h2 className="font-retro text-2xl text-cyan-400 mb-8 tracking-[0.2em]">NASTAVENÍ</h2><div className="w-full max-w-sm bg-gray-900 p-6 rounded-3xl border border-gray-800 shadow-2xl"><div className="mb-8"><label className="block text-gray-500 text-[9px] uppercase mb-4 tracking-widest">Metoda ovládání</label><div className="flex bg-black rounded-xl p-1 gap-1 border border-gray-800"><button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'BUTTONS' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('BUTTONS')}>TLAČÍTKA</button><button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'SWIPE' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('SWIPE')}>SWIPE</button></div></div><div className="space-y-6"><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Hudba</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(musicVol * 100)}%</span></div><input type="range" min="0" max="1" step="0.1" value={musicVol} onChange={handleMusicVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" /></div><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Zvuky</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(sfxVol * 100)}%</span></div><input type="range" min="0" max="1" step="0.1" value={sfxVol} onChange={handleSfxVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" /></div><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Vizuální efekty</label><span className="text-[10px] text-cyan-400 font-retro">{showParticles ? 'ZAP' : 'VYP'}</span></div><button onClick={() => setShowParticles(!showParticles)} className={`w-full py-2 rounded-lg font-retro text-[8px] transition-all ${showParticles ? 'bg-cyan-700 text-white' : 'bg-gray-800 text-gray-500'}`}>{showParticles ? 'POVOLENO' : 'ZAKÁZÁNO'}</button></div></div></div><button onClick={() => setShowSettings(false)} className="mt-10 px-12 py-4 bg-green-600 text-white font-retro rounded-xl shadow-lg active:scale-95 transition-all">ZPĚT</button></div>
       )}
       {gameState === GameState.PAUSED && !showSettings && (
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center z-50"><h2 className="font-retro text-3xl text-white mb-10 tracking-[0.2em] animate-pulse">PAUZA</h2><button onClick={() => { setGameState(GameState.PLAYING); audioController.startMusic(); }} className="px-10 py-4 bg-cyan-700 text-white font-retro rounded-xl mb-4 w-64 shadow-xl active:translate-y-1 transition-all">POKRAČOVAT</button><button onClick={() => setGameState(GameState.MENU)} className="px-10 py-4 bg-red-800 text-white font-retro rounded-xl w-64 shadow-xl active:translate-y-1 transition-all">MENU</button></div>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center z-50"><h2 className="font-retro text-3xl text-white mb-10 tracking-[0.2em] animate-pulse">PAUZA</h2><button onClick={() => { setGameState(GameState.PLAYING); audioController.startMusic(gameMode); }} className="px-10 py-4 bg-cyan-700 text-white font-retro rounded-xl mb-4 w-64 shadow-xl active:translate-y-1 transition-all">POKRAČOVAT</button><button onClick={() => setShowSettings(true)} className="px-10 py-4 bg-gray-700 text-white font-retro rounded-xl mb-4 w-64 shadow-xl active:translate-y-1 transition-all">NASTAVENÍ</button><button onClick={() => setGameState(GameState.MENU)} className="px-10 py-4 bg-red-800 text-white font-retro rounded-xl w-64 shadow-xl active:translate-y-1 transition-all">MENU</button></div>
       )}
     </div>
   );
