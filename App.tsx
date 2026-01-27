@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, Difficulty, GridCell, Player, Lemming, Particle, GameMode, Tetromino, Quest, QuestObjective, QuestObjectiveType, ControlScheme, ScoreEntry, KillerEntry } from './types';
 import { COLS, ROWS, BLOCK_SIZE, RANDOM_TETROMINO, DIFFICULTY_SPEEDS, MAX_LEMMINGS } from './constants';
-import { getTopScores, getTopKillers, saveScore, saveKiller } from './services/storageService';
+import { getTopScores, getTopKillers, saveScore, saveKiller, saveSettings, getSettings } from './services/storageService';
 import { saveScoreRemote, saveKillerRemote, fetchTopScoresRemote, fetchTopKillersRemote } from './services/databaseService';
 import { audioController } from './services/audioService';
 
@@ -12,6 +12,7 @@ const DownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height
 const LeftIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>;
 const RightIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>;
 const RefreshIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fillRule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>;
+const GearIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.86z"/></svg>;
 const WifiIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse text-cyan-500">
         <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
@@ -32,6 +33,10 @@ const WifiOffIcon = () => (
     </svg>
 );
 
+const formatNumber = (num: number): string => {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+};
+
 export default function App() {
   // --- Game State ---
   const [gameState, setGameState] = useState<GameState>(GameState.MENU);
@@ -46,10 +51,9 @@ export default function App() {
   const [activeLemmingsCount, setActiveLemmingsCount] = useState(0);
   const [nextPieceState, setNextPieceState] = useState(RANDOM_TETROMINO());
   const [quest, setQuest] = useState<Quest | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
 
   // High Scores State
-  const [scoreViewMode, setScoreViewMode] = useState<'LOCAL' | 'GLOBAL'>('LOCAL');
+  const [scoreViewMode, setScoreViewMode] = useState<'LOCAL' | 'GLOBAL'>('GLOBAL'); // Default Global
   const [isLoadingScores, setIsLoadingScores] = useState(false);
   const [scoreError, setScoreError] = useState<string | null>(null);
   const [topScores, setTopScores] = useState<ScoreEntry[]>([]);
@@ -75,7 +79,7 @@ export default function App() {
   const particlesRef = useRef<Particle[]>([]); 
   const isSpawningRef = useRef<boolean>(false);
   const linesToSpawnLemmingsRef = useRef<number>(0);
-  const killsInCurrentFrameRef = useRef<number>(0);
+  const killsInCurrentFrameRef = useRef<Lemming[]>([]); 
   const nextPieceRef = useRef<Tetromino>(RANDOM_TETROMINO());
   const questRef = useRef<Quest | null>(null);
   const questsCompletedRef = useRef<number>(0); 
@@ -92,6 +96,35 @@ export default function App() {
   // Menu input lock ref
   const menuLockRef = useRef<boolean>(false);
   const menuLockTimeoutRef = useRef<number | null>(null);
+
+  // --- Init Settings ---
+  useEffect(() => {
+      const saved = getSettings();
+      setControlScheme(saved.controlScheme);
+      setMusicVol(saved.musicVol);
+      setSfxVol(saved.sfxVol);
+      setShowParticles(saved.showParticles);
+      
+      // Init Audio Controller with loaded volumes
+      audioController.setMusicVolume(saved.musicVol);
+      audioController.setSfxVolume(saved.sfxVol);
+  }, []);
+
+  const saveCurrentSettings = useCallback(() => {
+      saveSettings({
+          controlScheme,
+          musicVol,
+          sfxVol,
+          showParticles
+      });
+  }, [controlScheme, musicVol, sfxVol, showParticles]);
+
+  useEffect(() => {
+      if (gameState === GameState.MENU || gameState === GameState.PAUSED) {
+          saveCurrentSettings();
+      }
+  }, [saveCurrentSettings, gameState]);
+
 
   // --- Load Scores ---
   const loadScores = useCallback(async () => {
@@ -253,7 +286,10 @@ export default function App() {
       questsCompletedRef.current = newTotal;
       setQuestsCompleted(newTotal);
       if (newTotal % 2 === 0) setCurrentSpeed(prev => Math.max(80, prev * 0.9));
-      let bonusPoints = 1000 * q.level;
+      
+      // Increased Quest Bonus: 5000 per level base + mult per objective
+      let bonusPoints = 5000 * q.level + (q.objectives.length * 1000 * q.level);
+
       if (gameMode === GameMode.SAVE) {
           const lemmingCount = lemmingsRef.current.length;
           bonusPoints += lemmingCount * 500 * q.level;
@@ -397,25 +433,73 @@ export default function App() {
 
   const updateLemmings = () => {
     const grid = gridRef.current; const lemmings = lemmingsRef.current; const player = playerRef.current;
-    let anyLemmingFalling = false; killsInCurrentFrameRef.current = 0; const survivingLemmings: Lemming[] = [];
+    let anyLemmingFalling = false; 
+    killsInCurrentFrameRef.current = []; 
+    const survivingLemmings: Lemming[] = [];
     
-    // Check Killer Logic first (simplistic O(N^2) but N is small)
+    // --- Interaction Loop (Killers, Talkers, Blockers, Zombies) ---
+    // Using O(N^2) but N is small (max 20)
     for (let i = 0; i < lemmings.length; i++) {
-        if (lemmings[i].isKiller) {
-            for (let j = 0; j < lemmings.length; j++) {
-                if (i !== j && !lemmings[j].isKiller) {
-                    const l1 = lemmings[i];
-                    const l2 = lemmings[j];
-                    const dist = Math.sqrt(Math.pow(l1.x - l2.x, 2) + Math.pow(l1.y - l2.y, 2));
-                    if (dist < 0.8) {
-                         // Killer touches victim
-                         audioController.playSquish();
-                         createParticleEffect(l2.x, l2.y, 'BLOOD', { count: 8, color: '#991b1b' });
-                         // Mark victim as dead (remove from render next frame effectively via filter below)
-                         // We mutate state here to filter out immediately, slightly hacky but efficient for game loop
-                         lemmings[j].state = 'DYING'; 
+        const l1 = lemmings[i];
+        
+        // Reset Talking State check for this frame (unless falling/dying)
+        let foundConversationPartner = false;
+
+        for (let j = 0; j < lemmings.length; j++) {
+            if (i === j) continue;
+            const l2 = lemmings[j];
+            
+            // Basic proximity check
+            const dist = Math.sqrt(Math.pow(l1.x - l2.x, 2) + Math.pow(l1.y - l2.y, 2));
+            
+            if (dist < 0.8) {
+                // 1. Killer Logic
+                if (l1.isKiller && !l2.isKiller && !l2.isZombie && l2.state !== 'DYING') {
+                     audioController.playSquish();
+                     createParticleEffect(l2.x, l2.y, 'BLOOD', { count: 8, color: '#991b1b' });
+                     l2.state = 'DYING'; 
+                }
+                
+                // 2. Zombie Infection Logic
+                if (l1.isZombie && !l2.isZombie && !l2.isKiller && l2.state !== 'DYING') {
+                     l2.isZombie = true;
+                     l2.isTalker = false; l2.isMiner = false; l2.isBlocker = false; l2.canClimb = false;
+                     createParticleEffect(l2.x, l2.y, 'TEXT', { text: 'BRAINS', color: '#84cc16', size: 10 });
+                     audioController.playLemmingSpawn(); // Morph sound
+                }
+                
+                // 3. Blocker Logic
+                if (l2.isBlocker && !l2.isZombie && l2.state !== 'DYING' && !l1.isBlocker) {
+                     // l1 bounce off l2
+                     if (l1.x < l2.x && l1.dx > 0) l1.dx = -1;
+                     else if (l1.x > l2.x && l1.dx < 0) l1.dx = 1;
+                }
+
+                // 4. Talker Logic
+                // Conditions: Both alive, not falling, on "same level" roughly
+                if (l1.isTalker && l1.state !== 'FALLING' && l1.state !== 'DYING' && 
+                    l2.state !== 'FALLING' && l2.state !== 'DYING' && !l1.isZombie && !l2.isZombie) {
+                    
+                    foundConversationPartner = true;
+
+                    // If l2 is NOT a Talker (and NOT a Killer/Blocker/Zombie), l2 turns around (Wall behavior)
+                    if (!l2.isTalker && !l2.isKiller && !l2.isBlocker && !l2.isZombie) {
+                        // Ensure l2 walks AWAY from l1
+                        if ((l2.x > l1.x && l2.dx < 0) || (l2.x < l1.x && l2.dx > 0)) {
+                             l2.dx *= -1;
+                        }
                     }
                 }
+            }
+        }
+
+        // Apply Talker State Updates
+        if (l1.isTalker && l1.state !== 'FALLING' && l1.state !== 'DYING') {
+            if (foundConversationPartner) {
+                l1.state = 'TALKING';
+            } else if (l1.state === 'TALKING') {
+                // No partner found nearby anymore, resume walking
+                l1.state = 'WALKING';
             }
         }
     }
@@ -425,19 +509,41 @@ export default function App() {
 
       const gridX = Math.floor(lemming.x); const gridY = Math.floor(lemming.y);
       
-      // Detekce rozdrcení blokem (střed Lemminga je uvnitř plného bloku)
+      // Detekce rozdrcení blokem
       if (gridY >= 0 && gridY < ROWS && gridX >= 0 && gridX < COLS && grid[gridY][gridX].value !== 0) { killLemming(lemming); return; }
       if (player && checkLemmingSquish(lemming, player)) { killLemming(lemming); return; }
       
       if (lemming.state === 'FALLING') {
-        anyLemmingFalling = true; const fallSpeed = 0.8; lemming.y += fallSpeed; const checkY = Math.floor(lemming.y + 0.9);
+        anyLemmingFalling = true; 
+        const fallSpeed = lemming.isFloater ? 0.15 : 0.8; 
+        lemming.y += fallSpeed; 
+        const checkY = Math.floor(lemming.y + 0.9);
         if (checkY >= ROWS || (checkY >= 0 && grid[checkY][Math.floor(lemming.x)].value !== 0)) { 
-            lemming.state = 'WALKING'; lemming.y = Math.floor(lemming.y); 
+            lemming.state = lemming.isBlocker ? 'BLOCKING' : 'WALKING'; 
+            lemming.y = Math.floor(lemming.y); 
             if (checkY < ROWS && grid[checkY][Math.floor(lemming.x)].value !== 0) lemming.y = checkY - 1; 
             else if (checkY >= ROWS) lemming.y = ROWS - 1; 
         }
       } else if (lemming.state === 'WALKING') {
         const groundY = Math.floor(lemming.y + 1); const centerXInt = Math.floor(lemming.x);
+        
+        // --- Miner Logic ---
+        if (lemming.isMiner && lemming.actionTimer > 0) {
+            lemming.actionTimer--;
+            if (lemming.actionTimer <= 0) {
+                 // Dig!
+                 const digY = Math.floor(lemming.y + 1);
+                 const digX = Math.floor(lemming.x);
+                 if (digY < ROWS && digX >= 0 && digX < COLS && grid[digY][digX].value !== 0) {
+                     grid[digY][digX] = { value: 0, color: '' };
+                     createParticleEffect(digX + 0.5, digY + 0.5, 'DEBRIS', { count: 3, color: '#fbbf24' });
+                     lemming.actionTimer = 40; // Reset timer (slower than walking)
+                 } else {
+                     lemming.actionTimer = 10; // Try again sooner if nothing to dig
+                 }
+            }
+        }
+
         if (groundY < ROWS && centerXInt >= 0 && centerXInt < COLS && grid[groundY][centerXInt].value === 0) { 
             lemming.state = 'FALLING'; lemming.x = centerXInt + 0.5; 
         } else {
@@ -474,11 +580,22 @@ export default function App() {
               const targetY = Math.floor(lemming.y); 
               if (lemming.y - targetY < 0.06) { lemming.y = targetY; lemming.x = wallX + 0.5; lemming.state = 'WALKING'; }
           }
+      } else if (lemming.state === 'TALKING' || lemming.state === 'BLOCKING') {
+          // Stay in place, maybe wiggle a bit for animation in draw, but x/y constant
+          const groundY = Math.floor(lemming.y + 1); const centerXInt = Math.floor(lemming.x);
+          if (groundY < ROWS && centerXInt >= 0 && centerXInt < COLS && grid[groundY][centerXInt].value === 0) {
+              lemming.state = 'FALLING'; 
+          }
       }
+      
       lemming.frame = (lemming.frame + 0.2) % 4; survivingLemmings.push(lemming);
     });
     
-    if (killsInCurrentFrameRef.current > 0) { if (gameMode !== GameMode.CAGE) applyKillScore(killsInCurrentFrameRef.current); reportQuestProgress('KILL_TOTAL', killsInCurrentFrameRef.current); }
+    if (killsInCurrentFrameRef.current.length > 0) { 
+        const count = killsInCurrentFrameRef.current.length;
+        if (gameMode !== GameMode.CAGE) applyKillScore(killsInCurrentFrameRef.current); 
+        reportQuestProgress('KILL_TOTAL', count); 
+    }
     lemmingsRef.current = survivingLemmings; 
     
     // Update Counts for State and Audio
@@ -497,14 +614,66 @@ export default function App() {
 
   const killLemming = (lemming: Lemming) => {
     audioController.playSquish();
-    killsInCurrentFrameRef.current++;
+    killsInCurrentFrameRef.current.push(lemming);
     setLemmingsKilled(prev => prev + 1);
-    createParticleEffect(lemming.x, lemming.y, 'BLOOD', { count: 12, color: '#991b1b' });
+    createParticleEffect(lemming.x, lemming.y, 'BLOOD', { count: 12, color: lemming.isZombie ? '#65a30d' : '#991b1b' });
   };
 
-  const applyKillScore = (count: number) => {
-      const baseVal = Math.floor(1000 * Math.pow(1.3, count) * count);
-      if (gameMode === GameMode.SAVE) setScore(s => s - baseVal); else setScore(s => s + baseVal);
+  const applyKillScore = (killed: Lemming[]) => {
+      const count = killed.length;
+      if (count === 0) return;
+
+      // Balanced formula: 200 * Count^2.5
+      let baseVal = Math.floor(200 * Math.pow(count, 2.5));
+
+      // Uniformity Checks
+      let allKillers = true;
+      let allClimbers = true;
+      let allTalkers = true;
+      let allZombies = true;
+      let allWalkers = true; // (Not killer, not climber, not talker, not zombie)
+
+      for (const l of killed) {
+          if (!l.isKiller) allKillers = false;
+          if (!l.isZombie) allZombies = false;
+          if (!l.canClimb || l.isKiller || l.isTalker || l.isZombie) allClimbers = false;
+          if (!l.isTalker) allTalkers = false;
+          if (l.isKiller || l.canClimb || l.isTalker || l.isZombie || l.isMiner || l.isBlocker || l.isFloater) allWalkers = false;
+      }
+
+      if (count > 1) {
+          if (allKillers) {
+              baseVal *= 10; 
+              createParticleEffect(COLS/2, ROWS/2, 'TEXT', { text: '10x MASAKR', color: '#ef4444', size: 22 });
+          } else if (allZombies) {
+              baseVal *= 5; 
+              createParticleEffect(COLS/2, ROWS/2, 'TEXT', { text: 'BIOHAZARD', color: '#84cc16', size: 20 });
+          } else if (allTalkers) {
+              baseVal *= 8; 
+              createParticleEffect(COLS/2, ROWS/2, 'TEXT', { text: '8x KECÁLCI', color: '#c026d3', size: 20 });
+          } else if (allClimbers) {
+              baseVal *= 4; 
+              createParticleEffect(COLS/2, ROWS/2, 'TEXT', { text: '4x LEZCI', color: '#eab308', size: 18 });
+          } else if (allWalkers) {
+              baseVal *= 2; 
+              createParticleEffect(COLS/2, ROWS/2, 'TEXT', { text: '2x KOMBO', color: '#fbbf24', size: 16 });
+          }
+      }
+      
+      // Zombie kills in SAVE/CAGE give negative score (or very low) because you should cure/isolate them, but actually killing them is good? 
+      // Let's say Zombie kills are good in SAVE mode (cleansing), but standard penalty applies if you kill normal lemmings.
+      // If mix, baseVal applies.
+      
+      // Simplify: Zombie gives positive points even in SAVE mode because they are bad.
+      const zombieCount = killed.filter(l => l.isZombie).length;
+      if (gameMode === GameMode.SAVE) {
+          // Penalty for normal, Bonus for zombie
+          const normalCount = count - zombieCount;
+          let change = (zombieCount * 500) - (Math.floor(200 * Math.pow(normalCount, 2.5)));
+          setScore(s => s + change);
+      } else {
+          setScore(s => s + baseVal);
+      }
   };
 
   const checkLemmingSquish = (l: Lemming, p: Player): boolean => {
@@ -519,18 +688,45 @@ export default function App() {
       const x = Math.floor(Math.random() * (COLS - 2)) + 1; 
       createParticleEffect(x + 0.5, 0, 'SMOKE', { count: 5, color: '#e5e7eb' });
       
-      const isKiller = Math.random() < 0.005; // 0.5% chance
+      const rand = Math.random();
       
+      // Probabilities
+      // Killer: 0.5%
+      // Talker: 5%
+      // Miner: 3%
+      // Blocker: 2%
+      // Floater: 3%
+      // Zombie: 1.5% (Only if allowed)
+      
+      const isKiller = rand < 0.005; 
+      const isTalker = !isKiller && rand < 0.055;
+      const isMiner = !isKiller && !isTalker && rand < 0.085;
+      const isBlocker = !isKiller && !isTalker && !isMiner && rand < 0.105;
+      const isFloater = !isKiller && !isTalker && !isMiner && !isBlocker && rand < 0.135;
+      
+      const allowZombie = gameMode === GameMode.SAVE || gameMode === GameMode.CAGE;
+      const isZombie = allowZombie && !isKiller && !isTalker && !isMiner && !isBlocker && !isFloater && rand < 0.15;
+      
+      const isNormal = !isKiller && !isTalker && !isMiner && !isBlocker && !isFloater && !isZombie;
+
       lemmingsRef.current.push({ 
           id: Date.now() + Math.random(), 
           x: x + 0.5, 
           y: 0, 
           dx: Math.random() > 0.5 ? 1 : -1, 
           dy: 0, 
-          state: 'FALLING', 
+          state: isBlocker ? 'BLOCKING' : 'FALLING', 
           frame: 0,
-          canClimb: !isKiller && Math.random() < 0.15, // Killers don't climb usually
-          isKiller: isKiller
+          canClimb: isNormal && Math.random() < 0.15, 
+          isKiller,
+          isTalker,
+          isMiner,
+          isBlocker,
+          isFloater,
+          isZombie,
+          stressLevel: 0,
+          stressThreshold: Math.floor(Math.random() * 11) + 5,
+          actionTimer: isMiner ? 20 : 0
       }); 
   };
 
@@ -573,18 +769,92 @@ export default function App() {
 
     if (gameOver) { triggerGameOver(); return; }
     placed.forEach(p => grid[p.y][p.x] = { value: 1, color: tetromino.color });
+
+    // --- STRESS MECHANIC (Trapped by Talkers) ---
+    // Update stress before killing or moving anything else
+    lemmingsRef.current.forEach(l => {
+        if (l.isKiller || l.isTalker || l.isZombie || l.state === 'DYING' || l.state === 'FALLING') return;
+
+        const gx = Math.floor(l.x);
+        const gy = Math.floor(l.y);
+
+        const wallLeft = (gx <= 0 || (grid[gy][gx-1] && grid[gy][gx-1].value !== 0));
+        const wallRight = (gx >= COLS - 1 || (grid[gy][gx+1] && grid[gy][gx+1].value !== 0));
+
+        // Find relevant talkers on the same vertical level
+        const relevantTalkers = lemmingsRef.current.filter(t => t.isTalker && t !== l && Math.abs(t.y - l.y) < 1.0);
+        
+        // A Talker blocks if they are to the left/right OR overlapping substantially (in 1-wide pit)
+        // Overlapping check: center distance < 0.8
+        const talkerLeft = relevantTalkers.some(t => (t.x < l.x && l.x - t.x < 2.0) || Math.abs(t.x - l.x) < 0.8);
+        const talkerRight = relevantTalkers.some(t => (t.x > l.x && t.x - l.x < 2.0) || Math.abs(t.x - l.x) < 0.8);
+        
+        // If overlapping, the Talker counts as blocking BOTH sides effectively in a tight space
+        
+        const blockedLeft = wallLeft || talkerLeft;
+        const blockedRight = wallRight || talkerRight;
+        const isTalkerInvolved = talkerLeft || talkerRight;
+
+        // Stress increases only if trapped on both sides AND at least one side is a Talker (or overlapping one)
+        if (blockedLeft && blockedRight && isTalkerInvolved) {
+            l.stressLevel = (l.stressLevel || 0) + 1;
+            createParticleEffect(l.x, l.y, 'TEXT', { text: '?!', color: '#fca5a5', size: 10 });
+
+            if (l.stressLevel >= l.stressThreshold) {
+                // SNAP!
+                if (Math.random() < 0.5) {
+                    // Become Killer
+                    l.isKiller = true;
+                    l.canClimb = false; l.isMiner = false; l.isBlocker = false; l.isFloater = false;
+                    l.stressLevel = 0;
+                     createParticleEffect(l.x, l.y, 'TEXT', { text: 'GRRR!', color: '#ef4444', size: 14 });
+                     createParticleEffect(l.x, l.y, 'SPARK', { count: 10, color: '#ef4444' });
+                     audioController.playLemmingSpawn(); // Morph sound
+                } else {
+                    // Die (Stress heart attack)
+                    killLemming(l);
+                    createParticleEffect(l.x, l.y, 'TEXT', { text: 'INFARKT', color: '#991b1b', size: 10 });
+                }
+            }
+        } else {
+            // Calm down if not trapped by talker anymore
+            l.stressLevel = 0;
+        }
+    });
     
     // Rozdrcení novým blokem
-    let trappedKills = 0; const surviving: Lemming[] = [];
+    const killedByDrop: Lemming[] = []; 
+    const surviving: Lemming[] = [];
+    
     lemmingsRef.current.forEach(l => {
         const isTrapped = placed.some(b => b.x === Math.floor(l.x) && b.y === Math.floor(l.y));
-        if (isTrapped) { if (gameMode === GameMode.CAGE) { grid[Math.floor(l.y)][Math.floor(l.x)].hasLemming = true; } else { trappedKills++; killLemming(l); } } else surviving.push(l);
+        const wasKilledByStress = killsInCurrentFrameRef.current.includes(l);
+
+        if (wasKilledByStress) {
+             // Already processed as dead
+        } else if (isTrapped) { 
+            if (gameMode === GameMode.CAGE) { 
+                grid[Math.floor(l.y)][Math.floor(l.x)].hasLemming = true; 
+            } else { 
+                killedByDrop.push(l); 
+                killLemming(l); 
+            } 
+        } else {
+            surviving.push(l);
+        }
     });
     lemmingsRef.current = surviving;
     
-    if (trappedKills > 0) { if (gameMode !== GameMode.CAGE) applyKillScore(trappedKills); reportQuestProgress('KILL_MULTI', trappedKills); reportQuestProgress('KILL_TOTAL', trappedKills); }
+    const killCount = killedByDrop.length;
+    if (killCount > 0) { 
+        if (gameMode !== GameMode.CAGE) applyKillScore(killedByDrop); 
+        reportQuestProgress('KILL_MULTI', killCount); 
+        reportQuestProgress('KILL_TOTAL', killCount); 
+    }
     
     let lines = 0; let totalSold = 0;
+    const killedByLineClear: Lemming[] = [];
+
     for (let r = 0; r < ROWS; r++) {
       if (grid[r].every(c => c.value !== 0)) {
         if (gameMode === GameMode.CAGE) grid[r].forEach((c, ci) => { if (c.hasLemming) { totalSold++; setLemmingsKilled(prev => prev + 1); createParticleEffect(ci, r, 'MONEY', { text: '$' }); } });
@@ -602,7 +872,10 @@ export default function App() {
             if (Math.floor(l.y) === r) inThisRow.push(l);
             else afterRowClear.push(l);
         });
-        inThisRow.forEach(l => killLemming(l));
+        inThisRow.forEach(l => { 
+            killLemming(l);
+            killedByLineClear.push(l);
+        });
         
         // Posun ostatních dolů
         afterRowClear.forEach(l => { if (l.y < r) l.y += 1; });
@@ -613,6 +886,12 @@ export default function App() {
         // Shift particles
         particlesRef.current.forEach(p => { if (p.y < r) p.y += 1; });
       }
+    }
+    
+    // Apply score for line clear kills (these are usually accidental, but still count)
+    // We treat them as a batch if multiple lines clear at once
+    if (killedByLineClear.length > 0 && gameMode !== GameMode.CAGE) {
+         applyKillScore(killedByLineClear);
     }
     
     checkSquashAfterShift();
@@ -627,14 +906,22 @@ export default function App() {
   const checkSquashAfterShift = () => {
     const surviving: Lemming[] = [];
     const grid = gridRef.current;
+    const killed: Lemming[] = [];
+
     lemmingsRef.current.forEach(l => {
         const gx = Math.floor(l.x); const gy = Math.floor(l.y);
         if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS && grid[gy][gx].value !== 0) {
             killLemming(l);
+            killed.push(l);
         } else {
             surviving.push(l);
         }
     });
+    
+    if (killed.length > 0 && gameMode !== GameMode.CAGE) {
+        applyKillScore(killed);
+    }
+
     lemmingsRef.current = surviving;
   };
 
@@ -717,26 +1004,56 @@ export default function App() {
     const py = lemming.y * BLOCK_SIZE; 
     const size = BLOCK_SIZE;
     
-    // Body
+    // -- BODY / SHIRT / SKIN --
     if (lemming.isKiller) {
         ctx.fillStyle = '#991b1b'; // Dark Red Hair
         ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3); 
         ctx.fillStyle = '#ef4444'; // Red Shirt
+    } else if (lemming.isTalker) {
+        ctx.fillStyle = '#c026d3'; // Purple Hair
+        ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3);
+        ctx.fillStyle = '#f472b6'; // Pink Shirt
+    } else if (lemming.isZombie) {
+        ctx.fillStyle = '#3f6212'; // Dark Green Hair
+        ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3);
+        ctx.fillStyle = '#78716c'; // Grey Shirt (ragged)
+    } else if (lemming.isMiner) {
+        ctx.fillStyle = '#4ade80'; // Green Hair
+        ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3);
+        
+        // Helmet Light
+        ctx.fillStyle = '#fbbf24'; // Helmet
+        ctx.fillRect(px + size*0.25, py + size*0.05, size*0.5, size*0.15);
+        ctx.fillStyle = '#fff'; // Light
+        const lightDir = lemming.dx > 0 ? 0.6 : 0.3;
+        ctx.fillRect(px + size*lightDir, py + size*0.08, size*0.1, size*0.1);
+
+        ctx.fillStyle = '#ea580c'; // Orange Shirt
+    } else if (lemming.isBlocker) {
+        ctx.fillStyle = '#4ade80'; // Green Hair
+        ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3);
+        ctx.fillStyle = '#1e3a8a'; // Dark Blue Uniform
+    } else if (lemming.isFloater) {
+        ctx.fillStyle = '#4ade80'; // Green Hair
+        ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3);
+        ctx.fillStyle = '#06b6d4'; // Cyan Shirt
     } else {
+        // Normal
         ctx.fillStyle = '#4ade80'; // Green Hair
         ctx.fillRect(px + size*0.25, py + size*0.1, size*0.5, size*0.3); 
         
-        if (lemming.canClimb) { // Check Property, not State
+        if (lemming.canClimb) { 
             ctx.fillStyle = '#eab308'; // Yellow Shirt for Climbers
         } else {
             ctx.fillStyle = '#3b82f6'; // Blue Shirt
         }
     }
     
+    // Draw Torso
     ctx.fillRect(px + size*0.3, py + size*0.4, size*0.4, size*0.4);
 
-    // Eyes
-    ctx.fillStyle = '#fff'; 
+    // -- EYES --
+    ctx.fillStyle = lemming.isZombie ? '#fecaca' : '#fff'; // Reddish eyes for zombies
     const eye1X = px + size*0.4; 
     const eye2X = px + size*0.6; 
     const eyeY = py + size*0.25; 
@@ -747,39 +1064,87 @@ export default function App() {
     // Pupils
     let pupX = 0; let pupY = 0; 
     if (lemming.state === 'CLIMBING') {
-        pupY = -1.5; // Look up when climbing
+        pupY = -1.5; 
+    } else if (lemming.state === 'TALKING') {
+         pupX = Math.sin(Date.now() / 200) * 1;
     } else if (playerRef.current) { 
         const angle = Math.atan2((playerRef.current.y + 1.5) * BLOCK_SIZE - eyeY, (playerRef.current.x + 1.5) * BLOCK_SIZE - (eye1X + eye2X)/2); 
         pupX = Math.cos(angle) * 1.5; pupY = Math.sin(angle) * 1.5; 
     }
-    ctx.fillStyle = '#000'; 
+    
+    if (lemming.isZombie) ctx.fillStyle = '#991b1b'; // Red pupils for zombie
+    else ctx.fillStyle = '#000'; 
+    
     ctx.beginPath(); ctx.arc(eye1X + pupX, eyeY + pupY, eyeSize/2, 0, Math.PI*2); ctx.fill(); 
     ctx.beginPath(); ctx.arc(eye2X + pupX, eyeY + pupY, eyeSize/2, 0, Math.PI*2); ctx.fill();
+    
+    // Mouth (for talkers)
+    if (lemming.state === 'TALKING') {
+         ctx.fillStyle = '#000';
+         const mouthOpen = Math.sin(Date.now() / 100) > 0 ? 3 : 1;
+         ctx.fillRect(px + size*0.45, py + size*0.55, size*0.1, mouthOpen);
+    }
 
-    // Legs / Arms based on state
-    ctx.fillStyle = '#fca5a5'; 
+    // -- EXTRAS (Parachute, Mining Pick) --
+    if (lemming.isFloater && lemming.state === 'FALLING') {
+         ctx.fillStyle = '#fff';
+         ctx.beginPath();
+         ctx.arc(px + size*0.5, py - size*0.2, size*0.4, Math.PI, 0);
+         ctx.fill();
+         ctx.strokeStyle = '#fff';
+         ctx.lineWidth = 1;
+         ctx.beginPath(); ctx.moveTo(px + size*0.1, py - size*0.2); ctx.lineTo(px + size*0.4, py + size*0.2); ctx.stroke();
+         ctx.beginPath(); ctx.moveTo(px + size*0.9, py - size*0.2); ctx.lineTo(px + size*0.6, py + size*0.2); ctx.stroke();
+    }
+    
+    if (lemming.isMiner && lemming.state === 'WALKING' && lemming.actionTimer < 10) {
+        // Mining animation
+        ctx.fillStyle = '#9ca3af';
+        const pickX = lemming.dx > 0 ? px + size*0.8 : px + size*0.2;
+        ctx.beginPath(); ctx.arc(pickX, py + size*0.8, size*0.15, 0, Math.PI*2); ctx.fill();
+    }
+
+    // -- LIMBS --
+    ctx.fillStyle = lemming.isZombie ? '#84cc16' : '#fca5a5'; // Green skin for zombie
     
     if (lemming.state === 'WALKING') { 
         const leg = Math.sin(lemming.frame * Math.PI) * 5; 
         ctx.fillRect(px + size*0.35 + leg, py + size*0.8, size*0.1, size*0.2); 
         ctx.fillRect(px + size*0.55 - leg, py + size*0.8, size*0.1, size*0.2); 
     } else if (lemming.state === 'CLIMBING') {
-        // Climbing animation: Hands up/down
         const armOffset = Math.sin(lemming.frame * Math.PI) * 3;
-        // Arms reaching up/pulling
         ctx.fillRect(px + size*0.2, py + size*0.3 + armOffset, size*0.15, size*0.3); 
         ctx.fillRect(px + size*0.65, py + size*0.3 - armOffset, size*0.15, size*0.3);
-        // Legs dangling/kicking
         const legOffset = Math.cos(lemming.frame * Math.PI) * 2;
         ctx.fillRect(px + size*0.35, py + size*0.8 + legOffset, size*0.1, size*0.2); 
         ctx.fillRect(px + size*0.55, py + size*0.8 - legOffset, size*0.1, size*0.2); 
+    } else if (lemming.state === 'TALKING' || lemming.state === 'BLOCKING') {
+         // Standing still legs
+         ctx.fillRect(px + size*0.35, py + size*0.8, size*0.1, size*0.2); 
+         ctx.fillRect(px + size*0.55, py + size*0.8, size*0.1, size*0.2); 
+
+         if (lemming.state === 'TALKING') {
+            const handY = Math.sin(Date.now() / 150) * 2;
+            ctx.fillRect(px + size*0.2, py + size*0.45 + handY, size*0.1, size*0.2); 
+            ctx.fillRect(px + size*0.7, py + size*0.45 - handY, size*0.1, size*0.2); 
+         } else if (lemming.state === 'BLOCKING') {
+            // Arms wide
+            ctx.fillRect(px, py + size*0.4, size*0.3, size*0.15); 
+            ctx.fillRect(px + size*0.7, py + size*0.4, size*0.3, size*0.15); 
+         }
     } else { 
         // Falling
         ctx.fillRect(px + size*0.35, py + size*0.7, size*0.1, size*0.2); 
         ctx.fillRect(px + size*0.55, py + size*0.7, size*0.1, size*0.2); 
-        // Parachute/Hands up panic
-        ctx.fillStyle = '#fff'; 
-        ctx.fillRect(px + size*0.1, py + size*0.3, size*0.8, size*0.1); 
+        
+        if (lemming.isFloater) {
+             // Arms up holding parachute
+             ctx.fillRect(px + size*0.2, py + size*0.2, size*0.1, size*0.3);
+             ctx.fillRect(px + size*0.7, py + size*0.2, size*0.1, size*0.3);
+        } else {
+            ctx.fillStyle = '#fff'; 
+            ctx.fillRect(px + size*0.1, py + size*0.3, size*0.8, size*0.1); 
+        }
     }
   };
 
@@ -820,7 +1185,8 @@ export default function App() {
 
   const saveHighScore = () => { 
       if (!playerName.trim()) return; 
-      const scoreData = { name: playerName, score, date: new Date().toLocaleDateString(), difficulty, mode: gameMode, saved: lemmingsSaved, killed: lemmingsKilled, quests: questsCompletedRef.current }; 
+      const currentSpeedPercent = Math.round((1000 - currentSpeed) / 5);
+      const scoreData = { name: playerName, score, date: new Date().toLocaleDateString(), difficulty, finalSpeed: currentSpeedPercent, mode: gameMode, saved: lemmingsSaved, killed: lemmingsKilled, quests: questsCompletedRef.current }; 
       saveScore(scoreData); 
       saveScoreRemote(scoreData).catch(err => console.error("Background score upload failed", err));
 
@@ -843,7 +1209,7 @@ export default function App() {
           <div className="flex flex-col gap-1.5 pointer-events-auto">
             <div className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl min-w-[90px] backdrop-blur-sm">
                 <div className="text-[8px] text-gray-400 uppercase">Skóre</div>
-                <div className={`font-retro text-xs md:text-base ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div>
+                <div className={`font-retro text-xs md:text-base ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{formatNumber(score)}</div>
                 <div className="mt-0.5 flex items-center gap-1 text-[7px] md:text-[9px] text-gray-500"><span>SPD:</span><span className="text-cyan-400 font-retro">{Math.round((1000 - currentSpeed) / 5)}%</span></div>
             </div>
             <div className="bg-gray-900/80 p-1.5 rounded border border-gray-700 shadow-xl min-w-[90px] backdrop-blur-sm">
@@ -869,6 +1235,11 @@ export default function App() {
       )}
       {gameState === GameState.MENU && (
         <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-start z-50 p-6 overflow-y-auto">
+            <div className="absolute top-4 right-4">
+                 <button onClick={() => setShowSettings(true)} className="p-2 bg-gray-800 rounded-lg border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors">
+                     <GearIcon />
+                 </button>
+            </div>
             <div className="pt-10 flex flex-col items-center w-full">
                 <h1 className="font-retro text-4xl md:text-6xl text-cyan-500 mb-2 text-center drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]">LEMRIS 2</h1>
                 <p className="text-[8px] text-gray-500 mb-6 tracking-[0.3em] uppercase">Save or Slaughter. You decide.</p>
@@ -897,8 +1268,8 @@ export default function App() {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl text-[9px] mb-8">
-                        <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md"><h3 className="font-retro text-yellow-500 mb-4 text-center tracking-widest uppercase">Globální Skóre</h3><table className="w-full text-left"><thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Úkoly</th><th className="text-right">Body</th></tr></thead><tbody>{topScores.map((s, i) => ( <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[70px] truncate text-gray-300 font-bold">{s.name}</td><td className="text-right text-gray-500">{s.quests || 0}</td><td className="text-right text-yellow-400 font-retro text-[7px]">{s.score}</td></tr> ))}</tbody></table></div>
-                        <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md"><h3 className="font-retro text-red-600 mb-4 text-center tracking-widest uppercase">Největší Vrazi</h3><table className="w-full text-left"><thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Mrtvol</th></tr></thead><tbody>{topKillers.map((k, i) => ( <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[90px] truncate text-gray-300 font-bold">{k.name}</td><td className="text-right text-red-500 font-retro text-[7px]">{k.kills}</td></tr> ))}</tbody></table></div>
+                        <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md"><h3 className="font-retro text-yellow-500 mb-4 text-center tracking-widest uppercase">Globální Skóre</h3><table className="w-full text-left"><thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Úkoly</th><th className="text-right">Rychlost</th><th className="text-right">Body</th></tr></thead><tbody>{topScores.map((s, i) => ( <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[70px] truncate text-gray-300 font-bold font-retro text-[8px]">{s.name}</td><td className="text-right text-gray-500">{s.quests || 0}</td><td className="text-right text-cyan-600 font-retro text-[8px]">{s.finalSpeed || 0}%</td><td className="text-right text-yellow-400 font-retro text-[7px]">{formatNumber(s.score)}</td></tr> ))}</tbody></table></div>
+                        <div className="bg-gray-900/60 p-4 rounded-2xl border border-gray-800 backdrop-blur-md"><h3 className="font-retro text-red-600 mb-4 text-center tracking-widest uppercase">Největší Vrazi</h3><table className="w-full text-left"><thead><tr className="text-gray-600 border-b border-gray-800"><th>Hráč</th><th className="text-right">Mrtvol</th></tr></thead><tbody>{topKillers.map((k, i) => ( <tr key={i} className="border-b border-gray-800/30"><td className="py-2 max-w-[90px] truncate text-gray-300 font-bold font-retro text-[8px]">{k.name}</td><td className="text-right text-red-500 font-retro text-[7px]">{formatNumber(k.kills)}</td></tr> ))}</tbody></table></div>
                     </div>
                 )}
                 
@@ -910,7 +1281,7 @@ export default function App() {
         </div>
       )}
       {gameState === GameState.GAME_OVER && (
-          <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center z-50 p-6 overflow-y-auto"><h2 className="font-retro text-4xl text-white mb-6 text-center drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">KONEC HRY</h2><div className="bg-black/60 p-6 rounded-3xl text-center mb-8 w-full max-w-sm border border-red-800/50 backdrop-blur-md"><div className="mb-2 text-gray-500 text-[9px] uppercase tracking-widest">Dosažené skóre</div><div className={`font-retro text-3xl mb-6 ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{score}</div><div className="grid grid-cols-2 gap-3 mb-6"><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">ÚKOLY</div><div className="font-retro text-base text-cyan-400">{questsCompleted}</div></div><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">{gameMode === GameMode.SAVE ? 'SAVED' : 'KILLS'}</div><div className={`font-retro text-base ${gameMode === GameMode.SAVE ? 'text-green-500' : 'text-red-500'}`}>{gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}</div></div></div><div className="flex flex-col gap-2 text-left"><label className="text-[9px] uppercase text-gray-500 tracking-widest ml-1">Tvé jméno:</label><input type="text" maxLength={12} placeholder="Hráč" className="bg-black border border-gray-800 text-white p-4 rounded-xl font-retro text-[10px] text-center focus:border-cyan-600 outline-none transition-all" value={playerName} onChange={(e) => setPlayerName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveHighScore()} autoFocus /></div></div><button onClick={saveHighScore} disabled={!playerName.trim()} className={`px-10 py-5 font-retro rounded-2xl shadow-xl transition-all w-full max-w-xs ${!playerName.trim() ? 'bg-gray-700 cursor-not-allowed text-gray-400' : 'bg-green-700 hover:bg-green-600 text-white active:translate-y-1'}`}>ULOŽIT VÝSLEDEK</button></div>
+          <div className="absolute inset-0 bg-red-950/95 flex flex-col items-center justify-center z-50 p-6 overflow-y-auto"><h2 className="font-retro text-4xl text-white mb-6 text-center drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">KONEC HRY</h2><div className="bg-black/60 p-6 rounded-3xl text-center mb-8 w-full max-w-sm border border-red-800/50 backdrop-blur-md"><div className="mb-2 text-gray-500 text-[9px] uppercase tracking-widest">Dosažené skóre</div><div className={`font-retro text-3xl mb-6 ${score < 0 ? 'text-red-500' : 'text-yellow-400'}`}>{formatNumber(score)}</div><div className="grid grid-cols-2 gap-3 mb-6"><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">ÚKOLY</div><div className="font-retro text-base text-cyan-400">{questsCompleted}</div></div><div className="bg-gray-950/80 p-3 rounded-2xl border border-gray-800"><div className="text-[7px] text-gray-600 mb-1 uppercase">{gameMode === GameMode.SAVE ? 'SAVED' : 'KILLS'}</div><div className={`font-retro text-base ${gameMode === GameMode.SAVE ? 'text-green-500' : 'text-red-500'}`}>{gameMode === GameMode.SAVE ? lemmingsSaved : lemmingsKilled}</div></div></div><div className="flex flex-col gap-2 text-left"><label className="text-[9px] uppercase text-gray-500 tracking-widest ml-1">Tvé jméno:</label><input type="text" maxLength={12} placeholder="Hráč" className="bg-black border border-gray-800 text-white p-4 rounded-xl font-retro text-[10px] text-center focus:border-cyan-600 outline-none transition-all" value={playerName} onChange={(e) => setPlayerName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveHighScore()} autoFocus /></div></div><button onClick={saveHighScore} disabled={!playerName.trim()} className={`px-10 py-5 font-retro rounded-2xl shadow-xl transition-all w-full max-w-xs ${!playerName.trim() ? 'bg-gray-700 cursor-not-allowed text-gray-400' : 'bg-green-700 hover:bg-green-600 text-white active:translate-y-1'}`}>ULOŽIT VÝSLEDEK</button></div>
       )}
       {showSettings && (
           <div className="absolute inset-0 bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center z-50 p-6"><h2 className="font-retro text-2xl text-cyan-400 mb-8 tracking-[0.2em]">NASTAVENÍ</h2><div className="w-full max-w-sm bg-gray-900 p-6 rounded-3xl border border-gray-800 shadow-2xl"><div className="mb-8"><label className="block text-gray-500 text-[9px] uppercase mb-4 tracking-widest">Metoda ovládání</label><div className="flex bg-black rounded-xl p-1 gap-1 border border-gray-800"><button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'BUTTONS' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('BUTTONS')}>TLAČÍTKA</button><button className={`flex-1 py-3 text-[9px] font-retro rounded-lg transition-all ${controlScheme === 'SWIPE' ? 'bg-cyan-700 text-white' : 'text-gray-600'}`} onClick={() => setControlScheme('SWIPE')}>SWIPE</button></div></div><div className="space-y-6"><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Hudba</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(musicVol * 100)}%</span></div><input type="range" min="0" max="1" step="0.1" value={musicVol} onChange={handleMusicVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" /></div><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Zvuky</label><span className="text-[10px] text-cyan-400 font-retro">{Math.round(sfxVol * 100)}%</span></div><input type="range" min="0" max="1" step="0.1" value={sfxVol} onChange={handleSfxVolChange} className="w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-500" /></div><div><div className="flex justify-between mb-2"><label className="text-gray-500 text-[9px] uppercase tracking-widest">Vizuální efekty</label><span className="text-[10px] text-cyan-400 font-retro">{showParticles ? 'ZAP' : 'VYP'}</span></div><button onClick={() => setShowParticles(!showParticles)} className={`w-full py-2 rounded-lg font-retro text-[8px] transition-all ${showParticles ? 'bg-cyan-700 text-white' : 'bg-gray-800 text-gray-500'}`}>{showParticles ? 'POVOLENO' : 'ZAKÁZÁNO'}</button></div></div></div><button onClick={() => setShowSettings(false)} className="mt-10 px-12 py-4 bg-green-600 text-white font-retro rounded-xl shadow-lg active:scale-95 transition-all">ZPĚT</button></div>

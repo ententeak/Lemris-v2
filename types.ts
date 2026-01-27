@@ -43,10 +43,21 @@ export interface Lemming {
   y: number;
   dx: number; 
   dy: number;
-  state: 'WALKING' | 'FALLING' | 'DYING' | 'CLIMBING';
+  state: 'WALKING' | 'FALLING' | 'DYING' | 'CLIMBING' | 'TALKING' | 'BLOCKING' | 'MINING';
   frame: number;
   canClimb: boolean;
-  isKiller: boolean; // New property
+  
+  // Types
+  isKiller: boolean;
+  isTalker: boolean;
+  isMiner: boolean;
+  isBlocker: boolean;
+  isFloater: boolean;
+  isZombie: boolean;
+
+  stressLevel: number;     
+  stressThreshold: number;
+  actionTimer: number; // For mining speed etc.
 }
 
 export interface Particle {
@@ -71,6 +82,7 @@ export interface ScoreEntry {
   score: number;
   date: string;
   difficulty: Difficulty;
+  finalSpeed?: number; // Added to track max speed reached
   mode?: GameMode;
   saved?: number;
   killed?: number;
@@ -113,4 +125,11 @@ export interface QuestObjective {
 export interface Quest {
   objectives: QuestObjective[];
   level: number;
+}
+
+export interface GameSettings {
+  controlScheme: ControlScheme;
+  musicVol: number;
+  sfxVol: number;
+  showParticles: boolean;
 }

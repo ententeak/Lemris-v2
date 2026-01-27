@@ -32,7 +32,8 @@ const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => 
 
 export const fetchTopScoresRemote = async (difficulty: Difficulty, mode: GameMode): Promise<ScoreEntry[]> => {
     try {
-        const response = await fetchWithTimeout(`${API_ENDPOINT}?action=get_scores&difficulty=${encodeURIComponent(difficulty)}&mode=${encodeURIComponent(mode)}`);
+        // Send empty difficulty to get all results for the mode
+        const response = await fetchWithTimeout(`${API_ENDPOINT}?action=get_scores&difficulty=&mode=${encodeURIComponent(mode)}`);
         if (!response.ok) throw new Error('Network response was not ok');
         const data = await response.json();
         return Array.isArray(data) ? data : [];
@@ -44,7 +45,7 @@ export const fetchTopScoresRemote = async (difficulty: Difficulty, mode: GameMod
 
 export const fetchTopKillersRemote = async (difficulty: Difficulty, mode: GameMode): Promise<KillerEntry[]> => {
     try {
-        const response = await fetchWithTimeout(`${API_ENDPOINT}?action=get_killers&difficulty=${encodeURIComponent(difficulty)}&mode=${encodeURIComponent(mode)}`);
+        const response = await fetchWithTimeout(`${API_ENDPOINT}?action=get_killers&difficulty=&mode=${encodeURIComponent(mode)}`);
         if (!response.ok) throw new Error('Network response was not ok');
         const data = await response.json();
         return Array.isArray(data) ? data : [];
